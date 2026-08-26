@@ -16,6 +16,9 @@ router = APIRouter(prefix="/api/simulation", tags=["simulation"])
 class RunSimulationRequest(BaseModel):
     station_config: Dict[str, Any]
     scenario_id: str = "polar_storm"
+    # Phase 2 C2: hours at which a mechanical panel clearing event occurs in the AI track.
+    # Populated by the agents API after the Energy Manager issues a work order.
+    mechanical_clearing_hours: Optional[List[int]] = None
 
 
 @router.get("/scenarios")
@@ -28,6 +31,7 @@ async def get_available_scenarios():
 async def run_scenario_simulation(req: RunSimulationRequest):
     """
     Executes 48h dual-track simulation comparing Baseline rule-based SCADA against Polaris AI.
+    Pass `mechanical_clearing_hours` to apply agentic crew work orders to the AI track ice model.
     """
     config = req.station_config
     lat = float(config.get("latitude", -69.4072))
@@ -39,7 +43,9 @@ async def run_scenario_simulation(req: RunSimulationRequest):
     sim_res = run_dual_simulation(
         station_config=config,
         weather_forecast=forecast_72h,
-        scenario_id=req.scenario_id
+        scenario_id=req.scenario_id,
+        mechanical_clearing_hours=req.mechanical_clearing_hours or [],
     )
 
     return sim_res
+
