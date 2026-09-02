@@ -1,6 +1,11 @@
 """
 POLARIS Station Demand & Multi-Load Service
 Simulates thermal, scientific, and habitat power loads under extreme polar weather conditions.
+
+Phase 2 changes:
+  - Added `thermal_load_kw` to output: sum of all heating loads (ids containing "heat"
+    or "thermal"). The CHP coupling model uses this to compute how much electrical
+    heating demand is offset by diesel generator waste heat.
 """
 
 from typing import Dict, Any, List
@@ -19,6 +24,9 @@ def calculate_station_load(
     """
     Computes real-time dynamic power consumption for all station subsystems.
     Thermal heating load scales with delta-T below indoor setpoint (+20°C) and wind chill.
+
+    Returns `thermal_load_kw` — the electrical heating component of total demand.
+    This is the value the CHP model uses to compute waste-heat offset (H_displaced).
     """
     indoor_setpoint = 20.0
     delta_t = max(0.0, indoor_setpoint - temperature_c)
@@ -47,13 +55,15 @@ def calculate_station_load(
     critical_load_kw = 0.0
     important_load_kw = 0.0
     deferrable_load_kw = 0.0
+    thermal_load_kw = 0.0   # Phase 2: tracks CHP-offsettable electrical heating
 
     for item in loads:
         base_p = float(item.get("power_kw", 10.0))
         p_id = item.get("id", "")
         priority = item.get("priority", "IMPORTANT").upper()
+        is_heating_load = ("heat" in p_id or "thermal" in p_id)
 
-        if "heat" in p_id or "thermal" in p_id:
+        if is_heating_load:
             curr_p = base_p * thermal_multiplier * mode_cfg["life"]
         elif "atmos" in p_id or "lab" in p_id or "research" in p_id or "computing" in p_id:
             curr_p = base_p * research_intensity * mode_cfg["research"]
@@ -66,6 +76,10 @@ def calculate_station_load(
 
         curr_p = round(max(1.0, curr_p), 2)
         total_load_kw += curr_p
+
+        # Accumulate heating load for CHP offset calculation
+        if is_heating_load:
+            thermal_load_kw += curr_p
 
         if priority == "CRITICAL":
             critical_load_kw += curr_p
@@ -89,6 +103,7 @@ def calculate_station_load(
         "critical_load_kw": round(critical_load_kw, 2),
         "important_load_kw": round(important_load_kw, 2),
         "deferrable_load_kw": round(deferrable_load_kw, 2),
+        "thermal_load_kw": round(thermal_load_kw, 2),   # Phase 2: CHP-offsettable heating
         "critical_percentage": round((critical_load_kw / total_load_kw * 100.0) if total_load_kw > 0 else 0.0, 1),
         "thermal_multiplier": round(thermal_multiplier, 3),
         "evaluated_loads": evaluated_loads
@@ -131,6 +146,8 @@ def compute_load_profile_72h(
             "critical_load_kw": calc["critical_load_kw"],
             "important_load_kw": calc["important_load_kw"],
             "deferrable_load_kw": calc["deferrable_load_kw"],
+            "thermal_load_kw": calc["thermal_load_kw"],       # Phase 2: CHP offset
             "thermal_multiplier": calc["thermal_multiplier"]
         })
     return timeline
+

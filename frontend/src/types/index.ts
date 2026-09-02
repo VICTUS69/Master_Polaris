@@ -102,16 +102,48 @@ export interface ScenarioDefinition {
   wind_multiplier: number;
   generator_available: boolean;
   solar_available: boolean;
-  battery_capacity_multiplier: number;
+  /** Phase 2: starting rime ice coverage on PV panels (%). Replaces static battery_capacity_multiplier. */
+  initial_ice_pct: number;
+  /** Phase 2: optional scenario-specific ice aggressiveness coefficient. */
+  humidity_factor_override?: number;
   duration_hours: number;
   severity: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' | 'EMERGENCY';
   color: string;
 }
 
+/**
+ * Phase 2: Real-time physics state for dashboard gauges and alerts.
+ * Exposed by the simulation engine per timestep and by the instant-state endpoint.
+ */
+export interface PhysicsState {
+  /** Rime ice coverage on PV panels, 0–100 % */
+  ice_coverage_pct: number;
+  /** Direction ice is moving this tick */
+  ice_trend: 'accumulating' | 'melting' | 'stable';
+  /** Total thermal power recoverable from diesel generator (kW) */
+  chp_heat_available_kw: number;
+  /** Electrical heating demand being offset by CHP waste heat (kW) */
+  chp_heat_displacing_kw: number;
+  /** Whether battery thermal blankets are active */
+  battery_heater_active: boolean;
+  /** Parasitic draw of battery heater (kW) */
+  battery_heater_kw: number;
+  /** Actual round-trip efficiency after Arrhenius correction (%) */
+  battery_eta_rte_pct: number;
+  /** Percentage reduction in RTE vs nominal (e.g. 12.4 = 12.4% worse than spec) */
+  arrhenius_derating_pct: number;
+}
+
+/**
+ * A single hour timestep from a simulation track (Baseline or AI).
+ * Phase 2 adds CHP, ice, and Arrhenius fields.
+ */
 export interface SimulationTimestep {
   hour: number;
+  /** Raw station load (kW), excluding battery heater parasitic */
   demand_kw: number;
   critical_load_kw?: number;
+  /** Total solar output after ice derating (kW) */
   solar_kw: number;
   solar_direct_kw: number;
   solar_charge_kw?: number;
@@ -125,6 +157,21 @@ export interface SimulationTimestep {
   fuel_remaining_l: number;
   fuel_consumed_l?: number;
   load_served_kw?: number;
+  // ── Phase 2: Dynamic physics state ────────────────────────────────────
+  /** Rime ice coverage on PV panels this hour (0–100 %) */
+  ice_coverage_pct: number;
+  /** Waste heat recovered from diesel generator (kW thermal) */
+  chp_heat_kw: number;
+  /** Electrical heating demand offset by CHP waste heat (kW) */
+  chp_heat_displacing_kw: number;
+  /** Parasitic battery thermal management draw (kW); 0 when T > -20°C */
+  battery_heater_kw: number;
+  /** Whether battery heater is active this tick */
+  battery_heater_active: boolean;
+  /** Arrhenius-adjusted round-trip efficiency this timestep (%) */
+  eta_rte_pct: number;
+  /** Electrical heating component of station demand (kW, CHP-offsettable) */
+  thermal_load_kw: number;
 }
 
 export interface DualSimulationResult {
@@ -143,6 +190,8 @@ export interface DualSimulationResult {
   baseline_timeline: SimulationTimestep[];
   ai_timeline: SimulationTimestep[];
   weather_timeline: WeatherTelemetry[];
+  /** Phase 2: ice coverage % per hour, shared by both tracks */
+  ice_trajectory?: number[];
 }
 
 export interface AgentLog {
