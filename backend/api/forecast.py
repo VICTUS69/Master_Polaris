@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from backend.forecasting.solar_forecast import predict_solar_generation
-from backend.forecasting.load_forecast import predict_station_load
+from backend.forecasting.load_forecast import get_ml_load_forecast
 from backend.services.weather_service import fetch_open_meteo_weather
 from backend.data.station_presets import POLAR_STATIONS
 
@@ -45,15 +45,8 @@ async def run_forecasting_pipeline(req: ForecastRequest):
         weather_forecast=forecast_72h
     )
 
-    # 2. AI Load Forecast
-    load_res = predict_station_load(
-        loads=loads_list,
-        weather_forecast=forecast_72h,
-        occupants=req.occupants,
-        operating_mode=req.operating_mode,
-        research_intensity=req.research_intensity,
-        heating_intensity=req.heating_intensity
-    )
+    # 2. Surrogate ML Load Forecast
+    load_res = get_ml_load_forecast(weather_forecast_series=forecast_72h)
 
     # 3. Calculate Prototype Resilience Risk Score
     curr = weather_data.get("current", {})

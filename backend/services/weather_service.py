@@ -123,7 +123,7 @@ def _generate_realistic_polar_data(lat: float, lon: float, hours: int = 72) -> D
     }
 
 
-async def fetch_open_meteo_weather(lat: float, lon: float, forecast_days: int = 4) -> Dict[str, Any]:
+async def fetch_open_meteo_weather(lat: float, lon: float, forecast_days: int = 4, station_id: str = "unknown") -> Dict[str, Any]:
     """
     Fetches real-time and multi-day hourly forecast from Open-Meteo API.
     Gracefully falls back to physical polar reanalysis cache if network issues occur.
@@ -180,6 +180,35 @@ async def fetch_open_meteo_weather(lat: float, lon: float, forecast_days: int = 
             if resp.status_code == 200:
                 raw = resp.json()
                 normalized = _normalize_open_meteo_response(lat, lon, raw)
+                
+                # --- Pipeline A Database Ingestion ---
+                try:
+                    import json
+                    from backend.database.db import get_db_connection
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    timestamp_now = datetime.now(timezone.utc).isoformat()
+                    current_data = normalized.get("current", {})
+                    
+                    cursor.execute("""
+                        INSERT INTO environmental_telemetry 
+                        (timestamp, station_id, temperature, wind, irradiance, source, quality, raw_payload)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        current_data.get("timestamp", timestamp_now),
+                        station_id,
+                        current_data.get("temperature_c"),
+                        current_data.get("wind_speed_kmh"),
+                        current_data.get("solar_irradiance_wm2"),
+                        "Open-Meteo",
+                        "OK",
+                        json.dumps(raw)
+                    ))
+                    conn.commit()
+                except Exception as db_exc:
+                    logger.error(f"Failed to persist Pipeline A telemetry: {db_exc}")
+                # --------------------------------------
+
                 _CACHE[key] = {
                     "_timestamp": datetime.now(timezone.utc).timestamp(),
                     "data": normalized
