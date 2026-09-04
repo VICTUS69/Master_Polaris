@@ -220,3 +220,59 @@ export interface AgentCycleResult {
     reserve_margin_pct: number;
   };
 }
+
+// ── Catastrophic Crisis Response ────────────────────────────────────────────
+
+export interface CrisisLoadItem {
+  id: string;
+  name: string;
+  power_kw: number;
+  rated_kw: number;
+  status: 'ACTIVE' | 'SHED';
+}
+
+export interface CrisisLoadTier {
+  loads: CrisisLoadItem[];
+  total_kw: number;
+  status: 'FULLY_POWERED' | 'SHED_TO_ZERO';
+}
+
+export interface CrisisResponse {
+  status: string;
+  station: string;
+  fault: string;
+  timestamp: string;
+  generation: {
+    solar_kw: number;
+    diesel_kw: number;
+    total_kw: number;
+  };
+  battery: {
+    capacity_kwh: number;
+    soc_pct: number;
+    available_energy_kwh: number;
+    status: string;
+  };
+  load_hierarchy: {
+    p0_life_support: CrisisLoadTier;
+    p1_bess_heating: CrisisLoadTier;
+    p2_science_rover: CrisisLoadTier;
+  };
+  survival: {
+    p0_load_kw: number;
+    p0_exergy_remaining_hours: number;
+    p0_exergy_remaining_minutes: number;
+    runway_display: string;
+  };
+  webhook: {
+    url: string;
+    fired: boolean;
+    response_status: number | null;
+  };
+  edge_databases: {
+    weather_cache: string;
+    scada_telemetry: string;
+    crisis_logged: boolean;
+  };
+}
+

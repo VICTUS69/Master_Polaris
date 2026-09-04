@@ -7,7 +7,7 @@ Smart India Hackathon 2026 Problem Statement PS26061
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.api import station, weather, forecast, optimization, simulation, agents
+from backend.api import station, weather, forecast, optimization, simulation, agents, crisis
 
 app = FastAPI(
     title="POLARIS — AI Polar Energy Resilience Platform",
@@ -31,6 +31,7 @@ app.include_router(forecast.router)
 app.include_router(optimization.router)
 app.include_router(simulation.router)
 app.include_router(agents.router)
+app.include_router(crisis.router)
 
 
 @app.get("/")
@@ -47,7 +48,8 @@ async def root():
             "forecast": "/api/forecast/run",
             "optimization": "/api/optimization/solve",
             "simulation": "/api/simulation/run",
-            "agents": "/api/agents/orchestrate"
+            "agents": "/api/agents/orchestrate",
+            "crisis": "/api/simulation/crisis"
         }
     }
 

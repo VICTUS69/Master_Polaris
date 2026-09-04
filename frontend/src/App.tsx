@@ -15,7 +15,8 @@ import {
   AgentLog,
   AgentCycleResult,
   ScenarioDefinition,
-  LoadItem
+  LoadItem,
+  CrisisResponse
 } from './types';
 
 // Default Bharati Station fallback configuration
@@ -108,6 +109,11 @@ export function App() {
   const [isExplainModalOpen, setIsExplainModalOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isDemoRunning, setIsDemoRunning] = useState<boolean>(false);
+
+  // Crisis State
+  const [crisisData, setCrisisData] = useState<CrisisResponse | null>(null);
+  const [isCrisisActive, setIsCrisisActive] = useState<boolean>(false);
+  const [isTriggeringCrisis, setIsTriggeringCrisis] = useState<boolean>(false);
 
   // Loading flags
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
@@ -279,6 +285,26 @@ export function App() {
     setIsDemoRunning(false);
   };
 
+  // Catastrophic Crisis Handler
+  const handleTriggerCrisis = async () => {
+    if (isTriggeringCrisis) return;
+    setIsTriggeringCrisis(true);
+    try {
+      const result = await apiClient.triggerCrisis();
+      setCrisisData(result);
+      setIsCrisisActive(true);
+    } catch (err) {
+      console.error('Crisis simulation error:', err);
+    } finally {
+      setIsTriggeringCrisis(false);
+    }
+  };
+
+  const handleResetCrisis = () => {
+    setIsCrisisActive(false);
+    setCrisisData(null);
+  };
+
   // Active Timestep Data
   const currentStep = simResult?.ai_timeline[currentHour] || null;
   const currentSimWeather = simResult?.weather_timeline[currentHour] || weather;
@@ -328,6 +354,11 @@ export function App() {
             recommendations={recommendations}
             onGeneratePlan={() => runForecastAndOptimization(station)}
             isLoadingPlan={isLoadingPlan}
+            crisisData={crisisData}
+            isCrisisActive={isCrisisActive}
+            isTriggeringCrisis={isTriggeringCrisis}
+            onTriggerCrisis={handleTriggerCrisis}
+            onResetCrisis={handleResetCrisis}
           />
         )}
 

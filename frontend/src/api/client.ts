@@ -4,7 +4,8 @@ import {
   InstantEnergyState,
   DualSimulationResult,
   AgentCycleResult,
-  ScenarioDefinition
+  ScenarioDefinition,
+  CrisisResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -122,6 +123,16 @@ export const apiClient = {
       })
     });
     if (!res.ok) throw new Error('Agent orchestration failed');
+    return res.json();
+  },
+
+  // Trigger Catastrophic Crisis Simulation
+  async triggerCrisis(): Promise<CrisisResponse> {
+    const res = await fetch(`${API_BASE}/simulation/crisis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error('Crisis simulation failed');
     return res.json();
   }
 };

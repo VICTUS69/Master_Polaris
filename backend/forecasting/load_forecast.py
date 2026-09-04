@@ -150,3 +150,14 @@ def get_ml_load_forecast(weather_forecast_series: List[Dict[str, Any]]) -> Dict[
         },
         "forecast_series": forecast_series
     }
+
+def predict_station_load(*args, **kwargs) -> Dict[str, Any]:
+    """
+    Alias wrapper for backward compatibility with optimization API.
+    Accepts weather_forecast or weather_forecast_series in kwargs.
+    """
+    weather_series = kwargs.get("weather_forecast") or kwargs.get("weather_forecast_series") or []
+    if not weather_series and len(args) > 0 and isinstance(args[0], list):
+        weather_series = args[0]
+    return get_ml_load_forecast(weather_series)
+
