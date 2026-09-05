@@ -5,238 +5,332 @@
 
 ---
 
-## 1. Project Structure
+## 1. Executive Summary & Core Philosophy
+
+**POLARIS** is an AI-driven, physics-informed microgrid energy management system and digital twin engineered specifically for edge-deployed polar research stations (e.g., Bharati, Maitri in Antarctica, Himadri in the Arctic).
+
+POLARIS operates on the closed-loop paradigm:
+$$\text{Observe} \longrightarrow \text{Predict} \longrightarrow \text{Simulate} \longrightarrow \text{Optimize} \longrightarrow \text{Validate} \longrightarrow \text{Act}$$
+
+### Key Innovations:
+1. **Polar Physics Integration (PINN Principles)**: Directly accounts for sub-zero battery Arrhenius degradation, dynamic rime-ice accretion on solar arrays, and Combined Heat & Power (CHP) thermal-electrical coupling.
+2. **Proactive Google OR-Tools MILP**: Replaces naive reactive SCADA threshold logic with multi-period rolling-horizon Mixed-Integer Linear Programming.
+3. **Multi-Agent Explainability Framework**: 4 specialized agents (Scenario, Forecast, Energy Manager, Safety) reasoning in tandem with human-in-the-loop work orders.
+4. **Catastrophic Crisis & Edge Resilience**: Local-first 3× SQLite persistence, automatic P0/P1/P2 load hierarchy shedding, thermal death exergy countdown, and asynchronous SOS satellite webhook telemetry.
+
+---
+
+## 2. Project Directory Structure
 
 ```
 Polaris_Latest/
-├── architecture_schema_v3.md          ← THIS FILE (Single Source of Truth)
+├── architecture_schema_v3.md          ← Master Architecture Schema (Single Source of Truth)
 │
 ├── backend/
-│   ├── main.py                        # FastAPI entrypoint — registers ALL routers
-│   ├── requirements.txt               # Python dependencies (fastapi, httpx, ortools, etc.)
-│   ├── .env.example                   # Environment variables (incl. REPLIT_WEBHOOK_URL)
+│   ├── main.py                        # FastAPI entrypoint — registers all REST & WS routers
+│   ├── requirements.txt               # Backend dependencies (fastapi, uvicorn[standard], websockets, ortools, etc.)
+│   ├── .env.example                   # Environment configuration (REPLIT_WEBHOOK_URL, OPEN_METEO_API_KEY)
 │   │
-│   ├── api/                           # REST & WebSocket API layer
+│   ├── api/                           # REST & WebSocket API Layer
 │   │   ├── station.py                 # GET /api/station/presets, POST /api/station/calculate-state
 │   │   ├── weather.py                 # GET /api/weather/live
 │   │   ├── forecast.py                # POST /api/forecast/run
 │   │   ├── optimization.py            # POST /api/optimization/solve
 │   │   ├── simulation.py              # POST /api/simulation/run, WS /api/simulation/ws/stream
-│   │   ├── crisis.py                  # POST /api/simulation/crisis ← NEW (Catastrophic Crisis)
+│   │   ├── crisis.py                  # POST /api/simulation/crisis (Catastrophic Survival Mode)
 │   │   └── agents.py                  # POST /api/agents/orchestrate
 │   │
-│   ├── database/
-│   │   ├── db.py                      # Primary SQLite connection (polaris.db)
-│   │   ├── schema.py                  # Core schema: stations, telemetry, quality tables
-│   │   └── edge_db.py                 # Edge-resilience SQLite layer ← NEW
-│   │
-│   ├── data/
-│   │   ├── polaris.db                 # Primary operational database
-│   │   ├── weather_cache.sqlite       # Edge DB: cached Open-Meteo forecasts ← NEW
-│   │   ├── scada_telemetry.sqlite     # Edge DB: SCADA sensor + crisis event log ← NEW
-│   │   ├── historical_telemetry.csv   # 15,000+ synthetic katabatic edge-cases
-│   │   └── station_presets.py         # Polar station configurations (Bharati, Maitri, etc.)
-│   │
-│   ├── simulation/
-│   │   ├── engine.py                  # Dual-track simulation (Baseline SCADA vs Polaris AI)
-│   │   └── scenarios.py               # Disaster scenario definitions
+│   ├── physics/
+│   │   └── polar_physics.py           # Core polar physics equations (Arrhenius, Rime Ice, CHP, Heaters)
 │   │
 │   ├── optimization/
-│   │   └── energy_optimizer.py        # Google OR-Tools MILP solver
+│   │   └── energy_optimizer.py        # Google OR-Tools SCIP MILP Solver
 │   │
-│   ├── physics/
-│   │   └── polar_physics.py           # Arrhenius RTE, rime ice, CHP, parasitic heater
+│   ├── forecasting/                   # AI Forecasting Pipeline
+│   │   ├── solar_forecast.py          # 72-hour solar irradiance & generation forecast
+│   │   └── load_forecast.py           # Gradient Boosting Regressor station demand forecast
 │   │
-│   ├── forecasting/                   # AI forecasting pipeline
-│   ├── services/                      # Weather, solar, load, optimizer services
-│   ├── agents/                        # Multi-agent orchestration (Forecast, Energy Mgr, Safety)
-│   └── scripts/                       # Utility scripts
+│   ├── simulation/                    # Digital Twin Simulation Engines
+│   │   ├── engine.py                  # Dual-track runner (Baseline SCADA vs Polaris AI)
+│   │   └── scenarios.py               # Disaster scenarios (Polar Storm, Generator Failure, Extreme Cold)
+│   │
+│   ├── agents/                        # Multi-Agent Orchestration
+│   │   └── orchestrator.py            # PolarisAgentOrchestrator (Scenario, Forecast, Energy Mgr, Safety)
+│   │
+│   ├── database/                      # Data Persistence Layer
+│   │   ├── db.py                      # Primary SQLite connection (polaris.db)
+│   │   ├── schema.py                  # Core schema: stations, telemetry, data quality
+│   │   └── edge_db.py                 # Edge resilience layer (weather_cache & scada_telemetry)
+│   │
+│   ├── services/                      # Business & Utility Services
+│   │   ├── weather_service.py         # Open-Meteo atmospheric integration & caching
+│   │   ├── solar_service.py           # Solar geometry & PV power profile generation
+│   │   ├── load_service.py            # Thermal & electrical demand aggregators
+│   │   ├── optimizer_service.py       # High-level solver invocation wrapper
+│   │   ├── data_validator.py          # Telemetry anomaly & plausibility checker
+│   │   └── synthetic_telemetry_engine.py # Synthetic sensor noise & katabatic stream generator
+│   │
+│   ├── data/
+│   │   ├── polaris.db                 # Primary SQLite operational database
+│   │   ├── weather_cache.sqlite       # Edge DB: Cached weather forecasts with TTL
+│   │   ├── scada_telemetry.sqlite     # Edge DB: Sensor streams & immutable crisis audit log
+│   │   ├── historical_telemetry.csv   # 15,000+ synthetic katabatic edge-case records
+│   │   └── station_presets.py         # Station configurations (Bharati, Maitri, Himadri, McMurdo)
+│   │
+│   └── scripts/
+│       └── generate_synthetic_telemetry.py # CLI script to regenerate synthetic datasets
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── App.tsx                    # Root application — state management & routing
-│   │   ├── main.tsx                   # Vite entrypoint
-│   │   ├── index.css                  # Global styles
-│   │   │
-│   │   ├── api/
-│   │   │   └── client.ts             # REST API client (incl. triggerCrisis())
-│   │   │
-│   │   ├── components/
-│   │   │   ├── Header.tsx             # Navigation & resilience indicator
-│   │   │   ├── CurrentEnergyCard.tsx   # Microgrid KPIs + CRISIS COUNTDOWN TIMER
-│   │   │   ├── LoadManagement.tsx      # P0/P1/P2 dispatch table + crisis shedding UI
-│   │   │   ├── EnergyFlow.tsx          # Sankey-style energy flow diagram
-│   │   │   ├── DigitalTwin.tsx         # 3D render canvas
-│   │   │   ├── SimulationControls.tsx  # Playback controls
-│   │   │   ├── BaselineComparison.tsx  # Dual-track comparison charts
-│   │   │   ├── AgentActivity.tsx       # Multi-agent log feed
-│   │   │   ├── ForecastChart.tsx       # Solar/load forecast charts
-│   │   │   ├── WeatherPanel.tsx        # Live atmospheric telemetry
-│   │   │   ├── StationMap.tsx          # Leaflet coordinate selector
-│   │   │   ├── StationConfig.tsx       # Equipment configuration panel
-│   │   │   ├── OptimizationTimeline.tsx # 24h optimal schedule
-│   │   │   ├── ExplainabilityModal.tsx  # Decision transparency modal
-│   │   │   ├── FinalReportModal.tsx     # End-of-simulation report
-│   │   │   ├── DataSourcesFooter.tsx    # Data lineage + AI pipeline specs
-│   │   │   └── PolarisDashboard.tsx     # WebSocket SCADA dashboard
-│   │   │
-│   │   ├── pages/
-│   │   │   ├── Dashboard.tsx           # Control tab — config + telemetry + crisis button
-│   │   │   ├── Simulation.tsx          # Simulation tab — dual-track playback
-│   │   │   └── Forecast.tsx            # Forecast tab — AI predictions
-│   │   │
-│   │   ├── store/
-│   │   │   └── usePolarisStore.ts      # Zustand WebSocket state
-│   │   │
-│   │   └── types/
-│   │       └── index.ts                # TypeScript type definitions (incl. CrisisResponse)
+│   ├── index.html                     # HTML5 entrypoint
+│   ├── package.json                   # React, Vite, Tailwind, Zustand, Lucide, Recharts dependencies
+│   ├── vite.config.ts                 # Vite bundler & build configuration
+│   ├── tailwind.config.js             # Styling tokens (dark mode, cyberpunk polar theme)
+│   ├── postcss.config.js              # PostCSS autoprefixer & Tailwind pipeline
+│   ├── tsconfig.json                  # TypeScript compiler settings
 │   │
-│   ├── index.html
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
-│   ├── tsconfig.json
-│   └── package.json
+│   └── src/
+│       ├── main.tsx                   # React root mount
+│       ├── App.tsx                    # Main layout, tab navigation, global state synchronization
+│       ├── index.css                  # Global styles, scanline animations, CRT glowing borders
+│       │
+│       ├── api/
+│       │   └── client.ts              # Strongly-typed Axios/Fetch API client
+│       │
+│       ├── store/
+│       │   └── usePolarisStore.ts     # Zustand store with auto-reconnecting WebSocket SCADA telemetry
+│       │
+│       ├── types/
+│       │   └── index.ts               # Complete TypeScript interfaces & contracts
+│       │
+│       ├── pages/
+│       │   ├── Dashboard.tsx          # Real-time SCADA control room & crisis trigger
+│       │   ├── Simulation.tsx         # 72-hour dual-track comparative digital twin playback
+│       │   └── Forecast.tsx           # Multi-horizon weather, rime ice, and load forecast curves
+│       │
+│       └── components/
+│           ├── Header.tsx             # Station switcher, system time, connectivity badges
+│           ├── CurrentEnergyCard.tsx  # KPI gauges, battery SoC meter, crisis countdown overlay
+│           ├── LoadManagement.tsx     # P0/P1/P2 load table, priority shed switches, status pill
+│           ├── EnergyFlow.tsx         # Microgrid energy balance Sankey-style flux diagram
+│           ├── DigitalTwin.tsx        # 2.5D/3D visual canvas of station habitats & solar arrays
+│           ├── SimulationControls.tsx # 72-hour timeline scrubber, speed multiplier (1x/5x/10x), scenario injector
+│           ├── BaselineComparison.tsx # Side-by-side metric cards & delta charts (Fuel, BESS cycles, Genset hours)
+│           ├── AgentActivity.tsx      # Multi-agent reasoning log with expandable decision steps
+│           ├── ForecastChart.tsx      # Recharts time-series: Irradiance, Wind, Temp, Rime Ice
+│           ├── WeatherPanel.tsx       # Live atmospheric dials & katabatic wind warnings
+│           ├── StationMap.tsx         # Polar coordinate locator (Leaflet/SVG map)
+│           ├── StationConfig.tsx      # Asset ratings (PV kWp, BESS kWh, Generator max kW, Load priorities)
+│           ├── OptimizationTimeline.tsx # 24h/72h optimal dispatch schedule Gantt/Stacked Area
+│           ├── ExplainabilityModal.tsx # Transparent AI decision reasoning & constraints breakdown
+│           ├── FinalReportModal.tsx   # Comprehensive post-simulation fuel & carbon savings audit
+│           ├── DataSourcesFooter.tsx  # Sensor lineage, PINN dataset specs, Open-Meteo citations
+│           └── PolarisDashboard.tsx    # Live WebSocket-driven telemetry dashboard view
+│
+└── venv/                              # Python Virtual Environment
 ```
 
 ---
 
-## 2. Catastrophic Crisis Endpoint
+## 3. Mathematical & Physical Formulations (`backend/physics/polar_physics.py`)
 
-### Route Definition
+All polar physics calculations are implemented as pure, side-effect-free mathematical functions shared identically across simulation and optimization.
 
-| Method | Path | Router | File |
-|--------|------|--------|------|
-| `POST` | `/api/simulation/crisis` | `crisis.router` | `backend/api/crisis.py` |
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       POLARIS PHYSICS ENGINE MODELS                         │
+├─────────────────────────┬─────────────────────────┬─────────────────────────┤
+│  1. Arrhenius Battery   │   2. Rime Ice Accretion │   3. CHP Thermal        │
+│     Derating & Heaters  │      Accumulator Model  │      Coupling Model     │
+└─────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
 
-### Execution Flow
+### Model 1: Arrhenius Battery Derating (Cold-Temperature Electrochemical Freeze)
+Li-ion (Li-NMC / LFP) battery internal impedance increases exponentially at sub-zero temperatures, dropping round-trip efficiency (RTE) and usable capacity.
+
+1. **Temperature-Adjusted Round-Trip Efficiency (RTE)**:
+   $$\text{RTE}(T) = \begin{cases} 
+   \text{RTE}_{\text{base}} & \text{if } T \ge T_{\text{ref}} \\
+   \max\left(\text{RTE}_{\min}, \;\text{RTE}_{\text{base}} \cdot \exp\left(\alpha \cdot (T - T_{\text{ref}})\right)\right) & \text{if } T < T_{\text{ref}}
+   \end{cases}$$
+   - $T_{\text{ref}} = -10.0\text{ }^\circ\text{C}$ (Arrhenius onset threshold)
+   - $\alpha = 0.025\text{ }^\circ\text{C}^{-1}$ (Decay constant calibrated to ~22% RTE reduction at $-30^\circ\text{C}$)
+   - $\text{RTE}_{\min} = 0.60$ (Physical minimum efficiency floor)
+   - Symmetric one-way charge/discharge efficiency: $\eta_{\text{chg}}(T) = \eta_{\text{dis}}(T) = \sqrt{\text{RTE}(T)}$
+
+2. **Parasitic Battery Thermal Management Load**:
+   $$P_{\text{heater}}(T) = \begin{cases}
+   C_{\text{heater\_frac}} \cdot \text{Cap}_{\text{BESS}} & \text{if } T < T_{\text{heater\_on}} \\
+   0.0 & \text{if } T \ge T_{\text{heater\_on}}
+   \end{cases}$$
+   - $T_{\text{heater\_on}} = -20.0\text{ }^\circ\text{C}$
+   - $C_{\text{heater\_frac}} = 0.005\text{ kW/kWh}$ (e.g., $3.0\text{ kW}$ firm load on a $600\text{ kWh}$ pack)
+
+3. **Effective Usable Capacity Derating**:
+   $$\text{Cap}_{\text{eff}}(T) = \begin{cases}
+   \text{Cap}_{\text{base}} & \text{if } T \ge T_{\text{ref}} \\
+   \max\left(0.75 \cdot \text{Cap}_{\text{base}}, \;\text{Cap}_{\text{base}} \cdot \exp(0.5 \cdot \alpha \cdot (T - T_{\text{ref}}))\right) & \text{if } T < T_{\text{ref}}
+   \end{cases}$$
+
+---
+
+### Model 2: Rime Ice Accretion Accumulator Variable
+Rime ice accumulates dynamically across time steps as supercooled water droplets strike solar PV panels during katabatic winds.
+
+1. **Dynamic Accretion & Melting Rate**:
+   $$\Delta \text{Ice}(t) = \begin{cases}
+   \text{Base} \cdot \max(0, V_{\text{wind}}(t) - V_{\text{thresh}}) \cdot \left(\frac{\text{RH}(t)}{100}\right) & \text{if } T(t) \le 0^\circ\text{C} \\
+   - \text{MeltRate} & \text{if } T(t) > 0^\circ\text{C}
+   \end{cases}$$
+   - $\text{Base} = 0.08\text{ \%/}(\text{km/h}\cdot\text{h})$
+   - $V_{\text{thresh}} = 15.0\text{ km/h}$
+   - $\text{MeltRate} = 5.0\text{ \%/h}$
+   - Accumulator bound: $\text{Ice}(t) = \min(100.0, \;\max(0.0, \;\text{Ice}(t-1) + \Delta \text{Ice}(t)))$
+
+2. **Solar Generation Derating**:
+   $$P_{\text{solar}}(t) = P_{\text{solar, clear}}(t) \cdot \left(1.0 - \text{Ice}(t) \cdot \gamma_{\text{ice}}\right)$$
+   - $\gamma_{\text{ice}} = 0.0085$ (At 100% ice coverage, 85% of irradiance is blocked; 15% diffuse light still penetrates)
+
+3. **Human-In-The-Loop Work Order Trigger**:
+   - If $\text{Ice}(t) \ge 60.0\%$, the Energy Manager Agent triggers a work order for manual crew clearing.
+   - Panel clearing completes after $\Delta t_{\text{crew}} = 2\text{ hours}$, resetting $\text{Ice}(t) = 0.0\%$.
+
+---
+
+### Model 3: Combined Heat & Power (CHP) Waste Heat Recovery
+Diesel generators produce electrical energy at ~35% efficiency and recoverable exhaust/jacket heat at ~45% efficiency.
+
+1. **Recoverable Thermal Output**:
+   $$Q_{\text{thermal}}(t) = P_{\text{diesel}}(t) \cdot C_{\text{CHP}}$$
+   - $C_{\text{CHP}} = \frac{0.45}{0.35} \approx 1.30\text{ kW}_{\text{thermal}}/\text{kW}_{\text{electric}}$
+
+2. **Net Electrical Heating Demand**:
+   $$P_{\text{heat, electric}}(t) = \max\left(0.0, \;P_{\text{heat, required}}(t) - Q_{\text{thermal}}(t)\right)$$
+
+3. **Total Station Net Demand**:
+   $$P_{\text{net\_demand}}(t) = P_{\text{critical\_electrical}}(t) + P_{\text{deferrable\_electrical}}(t) + P_{\text{heater}}(t) + P_{\text{heat, electric}}(t)$$
+
+---
+
+### Model 4: Exergy Runway & Thermal Death Calculation (Crisis Mode)
+In the event of total generation loss ($P_{\text{solar}} = 0, P_{\text{diesel}} = 0$):
+
+$$\text{Survival Hours} = \frac{\text{Battery Available Energy (kWh)}}{P_0\text{ Life Support Demand (kW)}} = \frac{\text{Cap}_{\text{BESS}} \cdot \left(\frac{\text{SoC}}{100}\right)}{\sum_{i \in P_0} P_i}$$
+
+For Bharati Station at $75\%\text{ SoC}$ ($450\text{ kWh}$) and $P_0 = 85.0\text{ kW}$:
+$$\text{Runway} = \frac{450\text{ kWh}}{85\text{ kW}} \approx 5.29\text{ Hours} = 5\text{ Hours } 17\text{ Minutes}$$
+
+---
+
+## 4. Google OR-Tools MILP Solver Formulation (`backend/optimization/energy_optimizer.py`)
+
+POLARIS formulates polar microgrid dispatch as a Mixed-Integer Linear Program (MILP) solved using the **SCIP solver** in Google OR-Tools over an $N$-step horizon ($N=72\text{ hours}$, step $\Delta t = 1\text{ hour}$).
+
+### Decision Variables (for each timestep $t \in [0, N-1]$):
+- $P_{\text{gen}}(t) \ge 0$: Diesel generator electrical output (kW)
+- $u_{\text{gen}}(t) \in \{0, 1\}$: Binary generator running status
+- $P_{\text{chg}}(t) \ge 0$: Battery charging power (kW)
+- $P_{\text{dis}}(t) \ge 0$: Battery discharging power (kW)
+- $u_{\text{chg}}(t), u_{\text{dis}}(t) \in \{0, 1\}$: Complementary charge/discharge binary locks
+- $\text{SoC}(t) \in [\text{SoC}_{\min}, \text{SoC}_{\max}]$: Battery state of charge (kWh)
+- $P_{\text{curt, P2}}(t) \ge 0$: P2 load curtailment (Science/Rover) (kW)
+- $P_{\text{curt, P1}}(t) \ge 0$: P1 load curtailment (BESS thermal) (kW)
+- $P_{\text{shortfall}}(t) \ge 0$: Critical P0 unserved load violation penalty (kW)
+
+### Objective Function:
+$$\min \sum_{t=0}^{N-1} \Big[ C_{\text{fuel}} \cdot P_{\text{gen}}(t) + C_{\text{om}} \cdot u_{\text{gen}}(t) + C_{\text{start}} \cdot \max(0, u_{\text{gen}}(t) - u_{\text{gen}}(t-1)) + C_{\text{deg}} \cdot (P_{\text{chg}}(t) + P_{\text{dis}}(t)) + w_{\text{p2}} \cdot P_{\text{curt, P2}}(t) + w_{\text{p1}} \cdot P_{\text{curt, P1}}(t) + w_{\text{crit}} \cdot P_{\text{shortfall}}(t) \Big]$$
+
+### Constraints:
+1. **Instantaneous Power Balance**:
+   $$P_{\text{solar}}(t) + P_{\text{gen}}(t) + P_{\text{dis}}(t) = P_{\text{net\_demand}}(t) + P_{\text{chg}}(t) - P_{\text{curt, P2}}(t) - P_{\text{curt, P1}}(t) - P_{\text{shortfall}}(t)$$
+2. **Dynamic SoC State Transition with Arrhenius Efficiencies**:
+   $$\text{SoC}(t+1) = \text{SoC}(t) + \left( P_{\text{chg}}(t) \cdot \eta_{\text{chg}}(T_t) - \frac{P_{\text{dis}}(t)}{\eta_{\text{dis}}(T_t)} \right) \Delta t$$
+3. **Generator Operating Bounds & Anti-Wet-Stacking Floor**:
+   $$u_{\text{gen}}(t) \cdot P_{\text{gen, min}} \le P_{\text{gen}}(t) \le u_{\text{gen}}(t) \cdot P_{\text{gen, max}} \quad (P_{\text{gen, min}} \ge 0.40 \cdot P_{\text{gen, max}})$$
+4. **Battery C-Rate & Complementarity**:
+   $$P_{\text{chg}}(t) \le u_{\text{chg}}(t) \cdot P_{\text{bess, max}}, \quad P_{\text{dis}}(t) \le u_{\text{dis}}(t) \cdot P_{\text{bess, max}}, \quad u_{\text{chg}}(t) + u_{\text{dis}}(t) \le 1$$
+
+---
+
+## 5. Multi-Agent Orchestration Framework (`backend/agents/orchestrator.py`)
+
+POLARIS deploys four specialized autonomous agents operating in structured negotiation:
+
+```mermaid
+graph TD
+    A[Scenario Agent] -->|Injects Katabatic Storm/Disaster| B[Forecast Agent]
+    B -->|Generates 72h Irradiance, Wind, Temp, Rime Ice| C[Energy Manager Agent]
+    C -->|Formulates MILP Dispatch & Crew Work Orders| D[Safety Agent]
+    D -->|Validates SoC Reserve & Fuel Bounds| E{Violations?}
+    E -->|Yes: Apply Override Protocols| C
+    E -->|No: Approve Dispatch Plan| F[Digital Twin & SCADA Controller]
+```
+
+1. **Scenario Agent**: Defines environmental triggers (e.g., Polar Storm, Total Solar Dropout, Genset Failure, Extreme Katabatic Freeze).
+2. **Forecast Agent**: Synthesizes Open-Meteo predictions with PINN rime-ice models to output 72h hazard projections.
+3. **Energy Manager Agent**: Solves the MILP dispatch, schedules pre-storm battery charging, and triggers human-in-the-loop mechanical panel clearing when ice $\ge 60\%$.
+4. **Safety Agent**: Enforces hard constraints (minimum 30% battery reserve before blizzards, maximum generator thermal limits, 0% P0 life-support curtailment).
+
+---
+
+## 6. Complete REST & WebSocket API Specification
+
+### REST Endpoints Summary:
+
+| Method | Endpoint | Description | Key Request / Query Parameters | Response Object |
+|--------|----------|-------------|--------------------------------|-----------------|
+| `GET` | `/` | Root API status & directory | None | System info & endpoint catalog |
+| `GET` | `/health` | Healthcheck | None | `{"status": "healthy"}` |
+| `GET` | `/api/station/presets` | Get preset polar station specs | None | `Dict[str, StationConfig]` |
+| `POST` | `/api/station/calculate-state` | Compute static state from inputs | Station config payload | `StationStateResponse` |
+| `GET` | `/api/weather/live` | Live atmospheric telemetry | `lat`, `lon` (float query params) | `WeatherResponse` |
+| `POST` | `/api/forecast/run` | Run 72-hour AI forecast | `station_id`, `scenario_id` | `ForecastResult` |
+| `POST` | `/api/optimization/solve` | Run Google OR-Tools MILP | Station, weather, horizons | `OptimizationResult` |
+| `POST` | `/api/simulation/run` | Run full 72h dual-track sim | Station, scenario, solver config | `SimulationResult` |
+| `POST` | `/api/simulation/crisis` | Trigger Catastrophic SOS Mode | None | `CrisisResponse` |
+| `POST` | `/api/agents/orchestrate` | Trigger multi-agent reasoning loop | Station, weather, scenario | `AgentOrchestrationResponse` |
+| `WS` | `/api/simulation/ws/stream` | Real-time SCADA telemetry stream | WebSocket connection | Continuous `PolarisSystemState` JSON |
+
+---
+
+## 7. Catastrophic Crisis Protocol & SOS Webhook
+
+### Route: `POST /api/simulation/crisis` (`backend/api/crisis.py`)
+
+When triggered, the system enforces non-negotiable survival rules:
+1. Solar generation is forced to $0\text{ kW}$ (panels iced/damaged).
+2. Diesel generators are forced to $0\text{ kW}$ (genset fuel/mechanical blackout).
+3. P1 (BESS Heating) is shed to $0\text{ kW}$ (cells sacrifice cycle longevity to save crew).
+4. P2 (Science, Labs, Computing, Rover Chargers) are shed to $0\text{ kW}$.
+5. P0 (Life Support Thermal, Comms, Water & Air Scrubbers) remains $100\%$ powered ($85.0\text{ kW}$).
+6. Thermal death exergy runway is calculated and delivered to UI.
+7. Asynchronous SOS satellite webhook is fired to `REPLIT_WEBHOOK_URL` (or logged locally).
+8. Crisis event is recorded into immutable `scada_telemetry.sqlite` ledger.
 
 ```mermaid
 sequenceDiagram
-    participant UI as React Dashboard
-    participant API as FastAPI /crisis
+    participant UI as React SCADA Dashboard
+    participant API as FastAPI /api/simulation/crisis
     participant DB as scada_telemetry.sqlite
-    participant WH as Replit SOS Webhook
+    participant WH as Satellite Webhook (REPLIT_WEBHOOK_URL)
 
     UI->>API: POST /api/simulation/crisis
-    API->>API: Load Bharati station preset
-    API->>API: Force solar=0, diesel=0
-    API->>API: Shed P1 (heater) & P2 (science) → 0 kW
-    API->>API: Calculate: survival_hours = battery_kwh / P0_kw
-    API->>DB: Log crisis event to edge DB
-    API->>WH: POST SOS payload (async, fire-and-forget)
-    API-->>UI: CrisisResponse JSON
-    UI->>UI: Render countdown timer, zero gauges, shed loads
+    API->>API: Force Solar=0 kW, Diesel=0 kW
+    API->>API: Shed P1 (Heater) & P2 (Science) to 0 kW
+    API->>API: Calculate Runway: 450 kWh / 85 kW = 5h 17m
+    API->>DB: INSERT INTO crisis_events (...)
+    API->>WH: POST Webhook Payload (Fire-and-Forget)
+    API-->>UI: Return CrisisResponse JSON
+    UI->>UI: Flash Emergency Red UI, Start Countdown Timer, Zero Gauges
 ```
 
-### Response Contract
-
-```json
-{
-  "status": "CRITICAL_SOS",
-  "station": "Bharati Research Station",
-  "fault": "Total Generation Failure",
-  "timestamp": "2026-09-04T22:20:00Z",
-  "generation": {
-    "solar_kw": 0,
-    "diesel_kw": 0,
-    "total_kw": 0
-  },
-  "battery": {
-    "capacity_kwh": 600,
-    "soc_pct": 75,
-    "available_energy_kwh": 450,
-    "status": "SOLE_POWER_SOURCE"
-  },
-  "load_hierarchy": {
-    "p0_life_support": {
-      "loads": [
-        {"id": "heat_life", "name": "Habitat & Life Support Thermal", "power_kw": 55.0, "status": "ACTIVE"},
-        {"id": "comm_nav", "name": "Satellite Uplink & Comms", "power_kw": 12.0, "status": "ACTIVE"},
-        {"id": "life_support", "name": "Water Purification & Air Scrubbers", "power_kw": 18.0, "status": "ACTIVE"}
-      ],
-      "total_kw": 85.0,
-      "status": "FULLY_POWERED"
-    },
-    "p1_bess_heating": {
-      "loads": [
-        {"id": "battery_heater", "name": "BESS Thermal Management", "power_kw": 0, "rated_kw": 15.0, "status": "SHED"}
-      ],
-      "total_kw": 0,
-      "status": "SHED_TO_ZERO"
-    },
-    "p2_science_rover": {
-      "loads": ["...all IMPORTANT and DEFERRABLE loads with status: SHED"],
-      "total_kw": 0,
-      "status": "SHED_TO_ZERO"
-    }
-  },
-  "survival": {
-    "p0_load_kw": 85.0,
-    "p0_exergy_remaining_hours": 5.29,
-    "p0_exergy_remaining_minutes": 317,
-    "runway_display": "5 Hours 17 Minutes"
-  },
-  "webhook": {
-    "url": "https://...",
-    "fired": true,
-    "response_status": 200
-  },
-  "edge_databases": {
-    "weather_cache": "weather_cache.sqlite",
-    "scada_telemetry": "scada_telemetry.sqlite",
-    "crisis_logged": true
-  }
-}
-```
-
----
-
-## 3. Load Priority Hierarchy (P0 / P1 / P2)
-
-The POLARIS system enforces a strict 3-tier load shedding protocol during energy crises:
-
-| Priority | Name | Description | Shedding Policy | Bharati Default |
-|----------|------|-------------|-----------------|-----------------|
-| **P0** | Life Support | Non-negotiable human survival loads: habitat thermal, comms, water/air | **NEVER SHED** — powered until battery depletion | 85 kW |
-| **P1** | BESS Heating | Battery thermal management (parasitic heater below -20°C) | Shed first in crisis — batteries sacrifice longevity for crew survival | 15 kW |
-| **P2** | Science & Rover | All IMPORTANT (labs, lighting) and DEFERRABLE (HPC, water heating, rover) loads | Shed immediately — zero scientific/operational loads | 127 kW |
-
-### Thermal Death Calculation
-
-```
-Survival_Hours = Battery_Available_Energy_kWh / P0_Load_kW
-
-Where:
-  Battery_Available_Energy_kWh = battery_capacity_kwh × (battery_soc_pct / 100)
-  P0_Load_kW = sum(load.power_kw for load in station.loads if load.priority == "CRITICAL")
-```
-
-For Bharati at 75% SoC: `450 kWh / 85 kW = 5.29 hours`
-
----
-
-## 4. SOS Webhook Payload Contract
-
-### Replit Webhook Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| Environment Variable | `REPLIT_WEBHOOK_URL` |
-| Method | `POST` |
-| Content-Type | `application/json` |
-| Timeout | 10 seconds |
-| Failure Mode | Fire-and-forget (logged but non-blocking) |
-
-### Payload Schema
-
+### SOS Webhook Payload Schema:
 ```json
 {
   "status": "CRITICAL_SOS",
   "station": "Bharati",
   "fault": "Total Generation Failure",
   "p0_exergy_remaining_hours": 5.29,
-  "timestamp": "2026-09-04T22:20:00Z",
+  "timestamp": "2026-09-05T10:45:00Z",
   "battery_soc_pct": 75.0,
   "p0_load_kw": 85.0,
   "battery_energy_kwh": 450.0
@@ -245,78 +339,105 @@ For Bharati at 75% SoC: `450 kWh / 85 kW = 5.29 hours`
 
 ---
 
-## 5. Edge-Deployed SQLite Resilience Layer
+## 8. Frontend Architecture & Component Tree
 
-POLARIS operates on edge-deployed hardware at polar research stations where connectivity is intermittent. Two additional SQLite databases provide local resilience:
+The frontend is built with **React 18 + TypeScript + Vite + Tailwind CSS + Zustand + Lucide Icons + Recharts**.
 
-### weather_cache.sqlite
-
-| Table | Purpose |
-|-------|---------|
-| `cached_forecasts` | Stores Open-Meteo API responses with TTL for offline operation |
-
-**Schema:**
-```sql
-CREATE TABLE cached_forecasts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    station_id TEXT NOT NULL,
-    latitude REAL,
-    longitude REAL,
-    forecast_json TEXT NOT NULL,
-    fetched_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    source TEXT DEFAULT 'open-meteo'
-);
+```
+App.tsx
+├── Header.tsx (Navigation tabs, station switcher, edge database resilience status)
+│
+├── [Tab: Dashboard] (Dashboard.tsx)
+│   ├── WeatherPanel.tsx (Ambient temp, katabatic wind, solar irradiance, ice alerts)
+│   ├── CurrentEnergyCard.tsx (KPI dials, battery SoC meter, CRISIS COUNTDOWN TIMER OVERLAY)
+│   ├── LoadManagement.tsx (P0/P1/P2 load table, shedding toggle switches, power bar)
+│   ├── EnergyFlow.tsx (Interactive flux diagram: Generation -> BESS -> Critical/Thermal/Science)
+│   ├── DigitalTwin.tsx (2.5D visual render canvas of station dome & solar array)
+│   └── StationConfig.tsx (Hardware ratings: PV kWp, BESS kWh, Diesel max kW)
+│
+├── [Tab: Simulation] (Simulation.tsx)
+│   ├── SimulationControls.tsx (72h scrubber, play/pause, 1x/5x/10x speed, scenario dropdown)
+│   ├── BaselineComparison.tsx (Side-by-side metric cards: Baseline SCADA vs Polaris AI)
+│   └── AgentActivity.tsx (Live multi-agent explainability stream: Scenario, Forecast, Energy, Safety)
+│
+├── [Tab: Forecast] (Forecast.tsx)
+│   ├── ForecastChart.tsx (Irradiance 72h curve, Wind speed envelope, Load forecast)
+│   └── OptimizationTimeline.tsx (MILP 72-hour stacked dispatch timeline)
+│
+├── ExplainabilityModal.tsx (Deep-dive AI mathematical reasoning & constraint audit)
+├── FinalReportModal.tsx (Post-simulation audit: fuel saved, CO2 avoided, battery cycles saved)
+└── DataSourcesFooter.tsx (PINN dataset specs, Open-Meteo lineage, edge DB status)
 ```
 
-### scada_telemetry.sqlite
-
-| Table | Purpose |
-|-------|---------|
-| `sensor_readings` | High-frequency SCADA sensor data (voltage, current, temperature) |
-| `crisis_events` | Immutable log of all SOS/crisis activations |
-
-**Schema:**
-```sql
-CREATE TABLE sensor_readings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    station_id TEXT NOT NULL,
-    sensor_type TEXT NOT NULL,
-    value REAL,
-    unit TEXT,
-    quality TEXT DEFAULT 'GOOD'
-);
-
-CREATE TABLE crisis_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    station_id TEXT NOT NULL,
-    fault_type TEXT NOT NULL,
-    p0_load_kw REAL,
-    battery_soc_pct REAL,
-    survival_hours REAL,
-    webhook_fired INTEGER DEFAULT 0,
-    webhook_response TEXT
-);
-```
+### State Management (`frontend/src/store/usePolarisStore.ts`):
+- **Store**: `usePolarisStore` (Zustand).
+- **WebSocket Connection**: Connects to `ws://localhost:8000/api/simulation/ws/stream`.
+- **Auto-Reconnect**: High-availability retry loop with backoff.
+- **Granular Selectors**: Prevents unnecessary DOM re-renders by selecting individual scalars (`simulation_hour`, `temperature_c`, `battery_soc_pct`, `critical_shortfall_kw`).
 
 ---
 
-## 6. AI Pipeline Specifications
+## 9. Data Persistence & Edge Resilience Layer
 
-| Parameter | Value |
-|-----------|-------|
-| **Training Corpus** | 15,000+ Synthetic Katabatic Edge-Cases (PINN) |
-| **Optimization Solver** | Google OR-Tools SCIP MILP |
-| **Weather Data Source** | Open-Meteo High-Resolution Atmospheric API |
-| **Physics Engine** | Arrhenius RTE + Rime Ice + CHP Waste Heat Recovery |
-| **Advisory LLM** | Qwen3:8B via Ollama (edge-deployable) |
-| **Edge Persistence** | 3× SQLite (polaris.db, weather_cache.sqlite, scada_telemetry.sqlite) |
+POLARIS implements a tri-database architecture for uninterrupted edge operation during Antarctic satellite blackouts:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           3× SQLITE EDGE STORAGE                            │
+├─────────────────────────┬─────────────────────────┬─────────────────────────┤
+│ 1. polaris.db           │ 2. weather_cache.sqlite │ 3. scada_telemetry.     │
+│    Primary DB           │    Weather TTL Cache    │    sqlite (Crisis Log)  │
+└─────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+1. **`polaris.db`** (`backend/database/schema.py`):
+   - `stations`: Physical station configurations, solar capacities, battery ratings.
+   - `telemetry`: Historical sensor records.
+   - `data_quality_flags`: Sensor outlier and plausibility validation flags.
+
+2. **`weather_cache.sqlite`** (`backend/database/edge_db.py`):
+   - `cached_forecasts`: Stores Open-Meteo responses with TTL for full offline capability.
+
+3. **`scada_telemetry.sqlite`** (`backend/database/edge_db.py`):
+   - `sensor_readings`: High-frequency sensor streams (voltage, current, temperature).
+   - `crisis_events`: Immutable audit ledger recording every SOS activation, runway, and webhook status.
 
 ---
 
-*Document Version: 3.0 — Catastrophic Crisis Workflow Update*
-*Last Updated: September 2026*
-*System: POLARIS AI Polar Energy Digital Twin*
-*Problem Statement: PS26061 — Smart India Hackathon 2026*
+## 10. Execution & Run Commands
+
+### Prerequisites:
+- Python 3.10+ in active virtual environment (`venv`)
+- Node.js 18+ and npm
+
+### 1. Backend Startup:
+```bash
+# Activate virtualenv (Windows PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# Install / update backend dependencies
+pip install -r backend/requirements.txt
+
+# Start FastAPI backend server
+uvicorn backend.main:app --reload --port 8000
+```
+*Backend API will be live at `http://127.0.0.1:8000` with Swagger docs at `http://127.0.0.1:8000/docs`.*
+
+### 2. Frontend Startup:
+```bash
+# Navigate to frontend
+cd frontend
+
+# Install Node dependencies
+npm install
+
+# Start Vite development server
+npm run dev
+```
+*Frontend SCADA Dashboard will be live at `http://localhost:5173`.*
+
+---
+
+*Document Version: 3.0 — Comprehensive Polaris Digital Twin Master Schema*  
+*Last Updated: September 2026*  
+*Smart India Hackathon 2026 — Problem Statement PS26061*

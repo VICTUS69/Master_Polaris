@@ -31,7 +31,7 @@ logger = logging.getLogger("polaris.crisis")
 router = APIRouter(prefix="/api/simulation", tags=["crisis"])
 
 # Configurable webhook URL — defaults to empty (fire-and-forget if unset)
-REPLIT_WEBHOOK_URL = os.getenv("REPLIT_WEBHOOK_URL") or "http://192.168.1.10/api/sos-webhook"
+REPLIT_WEBHOOK_URL = os.getenv("REPLIT_WEBHOOK_URL") or "http://127.0.0.1:3000/api/sos-webhook"
 
 
 # ── Response Models ──────────────────────────────────────────────────────────
