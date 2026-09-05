@@ -30,7 +30,7 @@ export const DigitalTwin: React.FC<DigitalTwinProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const solarKw = currentStep?.solar_kw || 0;
+  const solarKw = currentStep?.solar_total_kw ?? currentStep?.solar_kw ?? (currentStep ? (currentStep.solar_direct_kw || 0) + (currentStep.solar_to_battery_kw || 0) : 0);
   const battSoC = currentStep?.battery_soc_pct || 75;
   const isDischarging = (currentStep?.battery_discharge_kw || 0) > 0;
   const isCharging = (currentStep?.solar_charge_kw || currentStep?.solar_to_battery_kw || 0) > 0;

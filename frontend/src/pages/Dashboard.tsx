@@ -32,6 +32,7 @@ interface DashboardPageProps {
   recommendations: string[];
   onGeneratePlan: () => void;
   isLoadingPlan: boolean;
+  onSelectStationPreset?: (stationId: string) => void;
   // Crisis props
   crisisData: CrisisResponse | null;
   isCrisisActive: boolean;
@@ -57,6 +58,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   recommendations,
   onGeneratePlan,
   isLoadingPlan,
+  onSelectStationPreset,
   crisisData,
   isCrisisActive,
   isTriggeringCrisis,
@@ -77,6 +79,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             stationName={station.station_name}
             region={station.region}
             sourceLabel={weatherSourceLabel}
+            onSelectStationPreset={onSelectStationPreset}
           />
         </div>
         <div className="lg:col-span-6">

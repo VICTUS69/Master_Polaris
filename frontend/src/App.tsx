@@ -140,7 +140,8 @@ export function App() {
   }, []);
 
   // 2. Fetch Live Weather Data from Backend
-  const fetchLiveWeatherData = async (lat: number, lon: number) => {
+  const fetchLiveWeatherData = async (lat: number, lon: number, cfg?: StationConfig) => {
+    const targetStation = cfg || station;
     setIsLoadingWeather(true);
     try {
       const data = await apiClient.getLiveWeather(lat, lon, 4);
@@ -148,10 +149,10 @@ export function App() {
       setWeatherForecast(data.forecast_72h);
       setWeatherSource(data.source);
 
-      // Re-run instant state and forecasting pipeline
-      await calculateMicrogridState(data.current);
-      await runForecastAndOptimization(station);
-      await runSimulationScenario('polar_storm', station);
+      // Re-run instant state and forecasting pipeline with explicit targetStation
+      await calculateMicrogridState(data.current, targetStation);
+      await runForecastAndOptimization(targetStation);
+      await runSimulationScenario('polar_storm', targetStation);
     } catch (err) {
       console.error('Weather fetch error:', err);
     } finally {
@@ -160,12 +161,13 @@ export function App() {
   };
 
   // 3. Instant Microgrid Physics Calculation
-  const calculateMicrogridState = async (w: WeatherTelemetry | null = weather) => {
+  const calculateMicrogridState = async (w: WeatherTelemetry | null = weather, cfg?: StationConfig) => {
     if (!w) return;
+    const targetStation = cfg || station;
     setIsLoadingState(true);
     try {
       const state = await apiClient.calculateInstantState(
-        station,
+        targetStation,
         w.temperature_c,
         w.wind_speed_kmh,
         w.global_tilted_irradiance_wm2
@@ -238,10 +240,10 @@ export function App() {
 
   // Handlers
   const handleSelectStationPreset = (stationId: string) => {
-    const found = presets.find((p) => p.station_id === stationId);
+    const found = presets.find((p) => p.station_id === stationId || (p as any).id === stationId);
     if (found) {
       setStation(found);
-      fetchLiveWeatherData(found.latitude, found.longitude);
+      fetchLiveWeatherData(found.latitude, found.longitude, found);
     }
   };
 
@@ -264,22 +266,19 @@ export function App() {
   const handleStartDemoMode = async () => {
     if (isDemoRunning) return;
     setIsDemoRunning(true);
-    setActiveTab('control');
 
-    // Step 1: Bharati Preset and Fetch Live
-    handleSelectStationPreset('bharati');
-    await new Promise((r) => setTimeout(r, 1200));
+    const targetStation = station;
 
-    // Step 2: Switch to Agentic Simulation Tab
+    // Step 1: Switch to Agentic Simulation Tab
     setActiveTab('simulation');
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 600));
 
-    // Step 3: Trigger Polar Storm Scenario & Agent Cycle
+    // Step 2: Trigger Polar Storm Scenario & Agent Cycle for CURRENT station
     setSelectedScenarioId('polar_storm');
-    await runSimulationScenario('polar_storm', station);
-    await new Promise((r) => setTimeout(r, 1500));
+    await runSimulationScenario('polar_storm', targetStation);
+    await new Promise((r) => setTimeout(r, 800));
 
-    // Step 4: Fast-forward Playback Simulation
+    // Step 3: Fast-forward Playback Simulation
     setPlaybackSpeed(50);
     setIsPlaying(true);
     setIsDemoRunning(false);
@@ -354,6 +353,7 @@ export function App() {
             recommendations={recommendations}
             onGeneratePlan={() => runForecastAndOptimization(station)}
             isLoadingPlan={isLoadingPlan}
+            onSelectStationPreset={handleSelectStationPreset}
             crisisData={crisisData}
             isCrisisActive={isCrisisActive}
             isTriggeringCrisis={isTriggeringCrisis}
@@ -399,6 +399,7 @@ export function App() {
             resilienceRisk={resilienceRisk}
             onRefreshForecast={() => runForecastAndOptimization(station)}
             isLoading={isLoadingPlan}
+            station={station}
           />
         )}
       </main>
@@ -415,7 +416,7 @@ export function App() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         simResult={simResult}
-        stationName={station.station_name}
+        stationName={(simResult as any)?.station_name || station.station_name}
       />
 
       {/* Data Lineage Footer */}

@@ -63,8 +63,8 @@ def _build_per_timestep_physics(
 
     Returns a dict of parallel lists indexed by timestep t.
     """
-    base_rte = float(station_config.get("battery_rte_pct", 92.0)) / 100.0
-    batt_cap_kwh = float(station_config.get("battery_capacity_kwh", 600.0))
+    base_rte = float(station_config.get("battery_rte_pct", station_config.get("default_battery_rte_pct", 92.0))) / 100.0
+    batt_cap_kwh = float(station_config.get("battery_capacity_kwh", station_config.get("default_battery_kwh", 600.0)))
 
     eta_chg_arr      = []
     eta_dis_arr      = []
@@ -151,18 +151,18 @@ def optimize_energy_schedule(
         return {"success": False, "error": "Empty forecast series provided."}
 
     # ── Station physical parameters ─────────────────────────────────────────
-    solar_cap_kw     = float(station_config.get("solar_capacity_kw", 180.0))
-    batt_cap_kwh     = float(station_config.get("battery_capacity_kwh", 600.0))
-    current_soc_pct  = float(station_config.get("battery_soc_pct", 75.0))
-    min_reserve_pct  = float(station_config.get("battery_min_reserve_pct", 30.0)) + emergency_reserve_boost_pct
+    solar_cap_kw     = float(station_config.get("solar_capacity_kw", station_config.get("default_solar_kw", 180.0)))
+    batt_cap_kwh     = float(station_config.get("battery_capacity_kwh", station_config.get("default_battery_kwh", 600.0)))
+    current_soc_pct  = float(station_config.get("battery_soc_pct", station_config.get("default_battery_soc_pct", 75.0)))
+    min_reserve_pct  = float(station_config.get("battery_min_reserve_pct", station_config.get("default_battery_min_reserve_pct", 30.0))) + emergency_reserve_boost_pct
     min_reserve_pct  = min(85.0, max(15.0, min_reserve_pct))
-    max_soc_pct      = float(station_config.get("battery_max_soc_pct", 98.0))
-    max_chg_kw       = float(station_config.get("battery_max_charge_kw", 150.0))
-    max_dis_kw       = float(station_config.get("battery_max_discharge_kw", 150.0))
-    gen_cap_kw       = float(station_config.get("diesel_capacity_kw", 250.0))
-    current_fuel_l   = float(station_config.get("diesel_fuel_l", 1200.0))
-    fuel_rate_l_kwh  = float(station_config.get("diesel_consumption_l_per_kwh", 0.28))
-    gen_min_load_pct = float(station_config.get("diesel_min_load_pct", 25.0)) / 100.0
+    max_soc_pct      = float(station_config.get("battery_max_soc_pct", station_config.get("default_battery_max_soc_pct", 98.0)))
+    max_chg_kw       = float(station_config.get("battery_max_charge_kw", station_config.get("default_battery_max_charge_kw", 150.0)))
+    max_dis_kw       = float(station_config.get("battery_max_discharge_kw", station_config.get("default_battery_max_discharge_kw", 150.0)))
+    gen_cap_kw       = float(station_config.get("diesel_capacity_kw", station_config.get("default_diesel_kw", 250.0)))
+    current_fuel_l   = float(station_config.get("diesel_fuel_l", station_config.get("default_diesel_fuel_l", 1200.0)))
+    fuel_rate_l_kwh  = float(station_config.get("diesel_consumption_l_per_kwh", station_config.get("default_diesel_consumption_l_per_kwh", 0.28)))
+    gen_min_load_pct = float(station_config.get("diesel_min_load_pct", station_config.get("default_diesel_min_load_pct", 25.0))) / 100.0
     gen_min_kw       = gen_cap_kw * gen_min_load_pct
 
     # ── Pre-compute per-timestep physics parameters ─────────────────────────
@@ -227,6 +227,9 @@ def optimize_energy_schedule(
     initial_energy = batt_cap_kwh * (current_soc_pct / 100.0)
     solver.Add(E_batt[0] == initial_energy)
 
+    # Hard physical fuel tank constraint: generator cannot burn more fuel than available
+    solver.Add(sum(P_gen[t] * fuel_rate_l_kwh * dt for t in range(T)) <= current_fuel_l)
+
     # ── Constraints per timestep ────────────────────────────────────────────
     for t in range(T):
         solar_avail  = phy["solar_avail"][t]    # already ice-derated
@@ -289,12 +292,13 @@ def optimize_energy_schedule(
     for t in range(T):
         temp_t = phy["temp"][t]
 
-        # Full fuel cost on P_gen — no CHP discount here
-        objective.SetCoefficient(P_gen[t], fuel_rate_l_kwh * 2.20)
+        # Fuel cost: Polar delivered logistics cost (~$12.00/L delivered to remote polar bases).
+        # This is much higher than the previous $2.20 weight, correctly reflecting the true cost
+        # of diesel resupply to Antarctica/Arctic — ensures AI conserves fuel over curtailing science loads.
+        objective.SetCoefficient(P_gen[t], fuel_rate_l_kwh * 12.0)
 
         # Negative reward on H_displaced: solver earns savings only for
         # waste heat that is actually utilised by station heating loads.
-        # Coefficient = heat value per kW displaced (negative = reward in minimisation)
         objective.SetCoefficient(H_displaced[t], -CHP_HEAT_CREDIT_PER_KW)
 
         # Battery wear: higher at cold temperatures (Arrhenius-driven degradation)
@@ -302,11 +306,13 @@ def optimize_energy_schedule(
         batt_wear = BATT_WEAR_BASE + cold_penalty
         objective.SetCoefficient(P_batt_dis[t], batt_wear)
 
-        # Load curtailment: severe penalty to prevent any unnecessary shedding
-        objective.SetCoefficient(P_curt[t], 15.0)
+        # Load curtailment penalty ($0.80/kW): non-critical science & rover loads are
+        # shed during power deficits to save fuel — much lower than fuel cost so AI
+        # correctly prefers curtailing deferrable loads over burning expensive diesel.
+        objective.SetCoefficient(P_curt[t], 0.80)
 
         # Generator startup / running fixed cost
-        objective.SetCoefficient(u_gen[t], 1.50)
+        objective.SetCoefficient(u_gen[t], 2.50)
 
     objective.SetMinimization()
 
@@ -443,17 +449,17 @@ def _run_heuristic_optimizer(
     is unavailable.  Phase 2: applies the same Arrhenius RTE, parasitic heater,
     CHP coupling, and ice derating as the MILP path.
     """
-    batt_cap_kwh     = float(station_config.get("battery_capacity_kwh", 600.0))
-    current_soc_pct  = float(station_config.get("battery_soc_pct", 75.0))
+    batt_cap_kwh     = float(station_config.get("battery_capacity_kwh", station_config.get("default_battery_kwh", 600.0)))
+    current_soc_pct  = float(station_config.get("battery_soc_pct", station_config.get("default_battery_soc_pct", 75.0)))
     min_reserve_pct  = min(85.0, max(15.0,
-        float(station_config.get("battery_min_reserve_pct", 30.0)) + emergency_reserve_boost_pct))
-    max_soc_pct      = float(station_config.get("battery_max_soc_pct", 98.0))
-    max_chg_kw       = float(station_config.get("battery_max_charge_kw", 150.0))
-    max_dis_kw       = float(station_config.get("battery_max_discharge_kw", 150.0))
-    base_rte         = float(station_config.get("battery_rte_pct", 92.0)) / 100.0
-    gen_cap_kw       = float(station_config.get("diesel_capacity_kw", 250.0))
-    current_fuel_l   = float(station_config.get("diesel_fuel_l", 1200.0))
-    fuel_rate        = float(station_config.get("diesel_consumption_l_per_kwh", 0.28))
+        float(station_config.get("battery_min_reserve_pct", station_config.get("default_battery_min_reserve_pct", 30.0))) + emergency_reserve_boost_pct))
+    max_soc_pct      = float(station_config.get("battery_max_soc_pct", station_config.get("default_battery_max_soc_pct", 98.0)))
+    max_chg_kw       = float(station_config.get("battery_max_charge_kw", station_config.get("default_battery_max_charge_kw", 150.0)))
+    max_dis_kw       = float(station_config.get("battery_max_discharge_kw", station_config.get("default_battery_max_discharge_kw", 150.0)))
+    base_rte         = float(station_config.get("battery_rte_pct", station_config.get("default_battery_rte_pct", 92.0))) / 100.0
+    gen_cap_kw       = float(station_config.get("diesel_capacity_kw", station_config.get("default_diesel_kw", 250.0)))
+    current_fuel_l   = float(station_config.get("diesel_fuel_l", station_config.get("default_diesel_fuel_l", 1200.0)))
+    fuel_rate        = float(station_config.get("diesel_consumption_l_per_kwh", station_config.get("default_diesel_consumption_l_per_kwh", 0.28)))
 
     e_batt  = batt_cap_kwh * (current_soc_pct / 100.0)
     fuel_l  = current_fuel_l
@@ -506,12 +512,15 @@ def _run_heuristic_optimizer(
 
         if rem_after_batt > 0:
             if not forced_generator_offline and fuel_l > 0:
-                p_g  = min(gen_cap_kw, rem_after_batt)
-                g_on = True
-                f_use = p_g * fuel_rate
-                fuel_l = max(0.0, fuel_l - f_use)
-                total_diesel_l   += f_use
-                total_diesel_kwh += p_g
+                # Clamp generator by remaining fuel in tank
+                max_p_gen_fuel = fuel_l / max(0.001, fuel_rate)
+                p_g  = min(gen_cap_kw, rem_after_batt, max_p_gen_fuel)
+                if p_g > 0.01:
+                    g_on = True
+                    f_use = p_g * fuel_rate
+                    fuel_l = max(0.0, fuel_l - f_use)
+                    total_diesel_l   += f_use
+                    total_diesel_kwh += p_g
 
         # CHP credit (heuristic: gen is running, so subtract waste heat from remaining demand)
         chp_heat_kw  = round(p_g * CHP_C_THERMAL, 2)
