@@ -144,7 +144,9 @@ export interface SimulationTimestep {
   demand_kw: number;
   critical_load_kw?: number;
   /** Total solar output after ice derating (kW) */
-  solar_kw: number;
+  solar_kw?: number;
+  /** Total solar (direct + to battery) – returned by AI optimizer */
+  solar_total_kw?: number;
   solar_direct_kw: number;
   solar_charge_kw?: number;
   solar_to_battery_kw?: number;

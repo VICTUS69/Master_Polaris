@@ -59,21 +59,21 @@ def run_dual_simulation(
     T = min(len(weather_forecast), duration_hours)
 
     # ── Station equipment parameters ────────────────────────────────────────
-    solar_cap_kw    = float(station_config.get("solar_capacity_kw", 180.0))
-    efficiency_pct  = float(station_config.get("solar_efficiency_pct", 21.5))
-    batt_cap_kwh    = float(station_config.get("battery_capacity_kwh", 600.0))
-    initial_soc_pct = float(station_config.get("battery_soc_pct", 75.0))
-    min_reserve_pct = float(station_config.get("battery_min_reserve_pct", 30.0))
-    max_soc_pct     = float(station_config.get("battery_max_soc_pct", 98.0))
-    max_chg_kw      = float(station_config.get("battery_max_charge_kw", 150.0))
-    max_dis_kw      = float(station_config.get("battery_max_discharge_kw", 150.0))
-    base_rte        = float(station_config.get("battery_rte_pct", 92.0)) / 100.0
-    gen_cap_kw      = float(station_config.get("diesel_capacity_kw", 250.0))
-    initial_fuel_l  = float(station_config.get("diesel_fuel_l", 1200.0))
-    fuel_rate       = float(station_config.get("diesel_consumption_l_per_kwh", 0.28))
+    solar_cap_kw    = float(station_config.get("solar_capacity_kw", station_config.get("default_solar_kw", 180.0)))
+    efficiency_pct  = float(station_config.get("solar_efficiency_pct", station_config.get("default_solar_efficiency_pct", 21.5)))
+    batt_cap_kwh    = float(station_config.get("battery_capacity_kwh", station_config.get("default_battery_kwh", 600.0)))
+    initial_soc_pct = float(station_config.get("battery_soc_pct", station_config.get("default_battery_soc_pct", 75.0)))
+    min_reserve_pct = float(station_config.get("battery_min_reserve_pct", station_config.get("default_battery_min_reserve_pct", 30.0)))
+    max_soc_pct     = float(station_config.get("battery_max_soc_pct", station_config.get("default_battery_max_soc_pct", 98.0)))
+    max_chg_kw      = float(station_config.get("battery_max_charge_kw", station_config.get("default_battery_max_charge_kw", 150.0)))
+    max_dis_kw      = float(station_config.get("battery_max_discharge_kw", station_config.get("default_battery_max_discharge_kw", 150.0)))
+    base_rte        = float(station_config.get("battery_rte_pct", station_config.get("default_battery_rte_pct", 92.0))) / 100.0
+    gen_cap_kw      = float(station_config.get("diesel_capacity_kw", station_config.get("default_diesel_kw", 250.0)))
+    initial_fuel_l  = float(station_config.get("diesel_fuel_l", station_config.get("default_diesel_fuel_l", 1200.0)))
+    fuel_rate       = float(station_config.get("diesel_consumption_l_per_kwh", station_config.get("default_diesel_consumption_l_per_kwh", 0.28)))
     loads           = station_config.get("loads", [])
-    occupants       = int(station_config.get("occupants", 24))
-    operating_mode  = station_config.get("operating_mode", "Normal Operation")
+    occupants       = int(station_config.get("occupants", station_config.get("default_occupants", 24)))
+    operating_mode  = station_config.get("operating_mode", station_config.get("default_mode", "Normal Operation"))
 
     # ── Scenario modifiers ──────────────────────────────────────────────────
     gen_available = scenario.get("generator_available", True)
@@ -234,12 +234,14 @@ def run_dual_simulation(
         gen_active  = False
         if rem_deficit > 0:
             if gen_available and base_fuel_l > 0:
-                p_gen      = min(gen_cap_kw, rem_deficit)
-                gen_active = True
-                f_burn     = p_gen * fuel_rate
-                base_fuel_l        = max(0.0, base_fuel_l - f_burn)
-                base_diesel_liters += f_burn
-                base_diesel_kwh    += p_gen
+                max_p_gen_fuel = base_fuel_l / max(0.001, fuel_rate)
+                p_gen = min(gen_cap_kw, rem_deficit, max_p_gen_fuel)
+                if p_gen > 0.01:
+                    gen_active = True
+                    f_burn     = p_gen * fuel_rate
+                    base_fuel_l        = max(0.0, base_fuel_l - f_burn)
+                    base_diesel_liters += f_burn
+                    base_diesel_kwh    += p_gen
 
         curt   = max(0.0, rem_deficit - p_gen)
         served = dem - curt
@@ -260,6 +262,7 @@ def run_dual_simulation(
             "demand_kw":           dem_raw,         # report raw (un-heater'd) for comparison
             "critical_load_kw":    crit,
             "solar_kw":            round(s_dir + s_chg, 2),
+            "solar_total_kw":      round(s_dir + s_chg, 2),
             "solar_direct_kw":     round(s_dir, 2),
             "solar_charge_kw":     round(s_chg, 2),
             "battery_discharge_kw": round(b_dis, 2),
@@ -337,6 +340,8 @@ def run_dual_simulation(
     ))
 
     return {
+        "station_id": station_config.get("station_id", station_config.get("id", "bharati")),
+        "station_name": station_config.get("station_name", station_config.get("name", "Bharati Research Station")),
         "scenario":       scenario,
         "duration_hours": T,
         "metrics_comparison": {
