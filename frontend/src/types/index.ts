@@ -276,3 +276,54 @@ export interface CrisisResponse {
   };
 }
 
+
+export interface P0P1P2Status {
+  p0_active: boolean;
+  p1_active: boolean;
+  p2_active: boolean;
+}
+
+export interface HybridTimeFrame {
+  hour: number;
+  timestamp: string;
+  temperature_c: number;
+  solar_pv_yield_kw: number;
+  generator_output_kw: number;
+  chp_heat_displacing_kw: number;
+  battery_soc_pct: number;
+  battery_heater_kw: number;
+  p0_p1_p2_status: P0P1P2Status;
+  thermal_death_runway_hours: number;
+  total_load_kw: number;
+}
+
+export interface HybridForecastResponse {
+  baseline_series: HybridTimeFrame[];
+  optimized_series: HybridTimeFrame[];
+}
+
+export interface LoadAnalysisFrame {
+  hour: string;
+  baseline_kw: number;
+  ai_p10_kw: number;
+  ai_p50_kw: number;
+  ai_p90_kw: number;
+  habitat_heating_kw: number;
+  life_support_kw: number;
+  battery_jacket_kw: number;
+  science_labs_kw: number;
+  temperature_c: number;
+  wind_kmh: number;
+}
+
+export interface LoadAnalysisKPIs {
+  wind_chill_penalty_kw: number;
+  forecast_error_reduction_pct: number;
+  thermal_inertia_lag_hours: number;
+}
+
+export interface LoadAnalysisResponse {
+  series: LoadAnalysisFrame[];
+  kpis: LoadAnalysisKPIs;
+  generator_capacity_kw: number;
+}

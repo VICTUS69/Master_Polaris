@@ -50,11 +50,7 @@ export const ForecastPage: React.FC<ForecastPageProps> = ({
       </div>
 
       {/* 72-Hour Interactive Chart */}
-      <ForecastChart
-        solarForecast={solarForecast}
-        loadForecast={loadForecast}
-        weatherForecast={weatherForecast}
-      />
+      <ForecastChart />
 
       {/* Resilience Risk & Model Diagnostics Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

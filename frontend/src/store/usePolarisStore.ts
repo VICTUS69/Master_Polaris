@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { HybridForecastResponse, LoadAnalysisResponse } from '../types';
 
 export interface PolarisSystemState {
   simulation_hour: number;
@@ -20,6 +21,16 @@ export interface PolarisSystemState {
 
 interface PolarisStore extends PolarisSystemState {
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
+  hybridForecast: HybridForecastResponse | null;
+  forecastMode: 'baseline' | 'optimized' | 'comparative';
+  setForecastMode: (mode: 'baseline' | 'optimized' | 'comparative') => void;
+  fetchHybridForecast: () => Promise<void>;
+  loadAnalysis: LoadAnalysisResponse | null;
+  fetchLoadAnalysis: () => Promise<void>;
+  hoveredHour: number | null;
+  setHoveredHour: (hour: number | null) => void;
+  selectedHour: number | null;
+  setSelectedHour: (hour: number | null) => void;
   connectWebSocket: () => void;
   updateState: (data: Partial<PolarisSystemState>) => void;
 }
@@ -43,6 +54,32 @@ export const usePolarisStore = create<PolarisStore>((set, get) => ({
   latest_agent_log: 'SYSTEM INITIALIZING...',
   
   connectionStatus: 'disconnected',
+  hybridForecast: null,
+  loadAnalysis: null,
+  hoveredHour: null,
+  setHoveredHour: (hour) => set({ hoveredHour: hour }),
+  selectedHour: null,
+  setSelectedHour: (hour) => set({ selectedHour: hour }),
+  fetchLoadAnalysis: async () => {
+    try {
+        const response = await fetch('http://localhost:8000/api/forecast/load/analysis');
+        const data = await response.json();
+        set({ loadAnalysis: data });
+    } catch (e) {
+        console.error('Failed to fetch load analysis', e);
+    }
+  },
+  forecastMode: 'comparative',
+  setForecastMode: (mode) => set({ forecastMode: mode }),
+  fetchHybridForecast: async () => {
+    try {
+        const response = await fetch('http://localhost:8000/api/forecast/hybrid');
+        const data = await response.json();
+        set({ hybridForecast: data });
+    } catch (e) {
+        console.error('Failed to fetch hybrid forecast', e);
+    }
+  },
 
   updateState: (data) => set((state) => ({ ...state, ...data })),
 

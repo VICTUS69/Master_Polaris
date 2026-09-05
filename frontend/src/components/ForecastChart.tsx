@@ -1,248 +1,330 @@
-import React, { useState } from 'react';
-import { BarChart3, Activity, Sun, Battery, Thermometer, Wind } from 'lucide-react';
+import React, { useEffect, useCallback } from 'react';
+import { Wind, TrendingDown, Clock, Layers, BarChart4 } from 'lucide-react';
+import { usePolarisStore } from '../store/usePolarisStore';
+import { MathInspectorPanel } from './MathInspectorPanel';
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
   CartesianGrid,
   AreaChart,
-  Area
+  Area,
+  ComposedChart,
+  Line,
+  ReferenceLine,
 } from 'recharts';
 
-interface ForecastChartProps {
-  solarForecast: any;
-  loadForecast: any;
-  weatherForecast: any[];
-}
+// ── Color System (Dark-Mode Command Center) ─────────────────────────────────
+const COLORS = {
+  baseline:       '#6b7280',  // Dashed grey — legacy SCADA
+  aiP50:          '#22d3ee',  // Solid cyan — POLARIS AI expected
+  envelope:       '#22d3ee',  // Glowing cyan envelope (P10–P90)
+  genLimit:       '#ef4444',  // Solid red — generator physical limit
+  heatP0:         '#ef4444',  // Red — P0 Habitat Heating
+  jacketP1:       '#f97316',  // Orange — P1 Battery Thermal Jacket
+  scienceP2:      '#3b82f6',  // Blue — P2 Deferrable Science
+  lifeSupportP0:  '#10b981',  // Emerald — Life Support base
+  gridLines:      '#1e293b',
+  axisText:       '#64748b',
+  tooltipBg:      '#0f172a',
+  tooltipBorder:  '#334155',
+};
 
-export const ForecastChart: React.FC<ForecastChartProps> = ({
-  solarForecast,
-  loadForecast,
-  weatherForecast
-}) => {
-  const [activeChart, setActiveChart] = useState<'demand' | 'solar' | 'weather'>('demand');
+export const ForecastChart: React.FC = () => {
+  const {
+    loadAnalysis,
+    fetchLoadAnalysis,
+    hoveredHour,
+    setHoveredHour,
+    setSelectedHour,
+  } = usePolarisStore();
 
-  const loadSeries = loadForecast?.forecast_series || [];
-  const solarSeries = solarForecast?.forecast_series || [];
+  useEffect(() => {
+    if (!loadAnalysis) {
+      fetchLoadAnalysis();
+    }
+  }, [loadAnalysis, fetchLoadAnalysis]);
 
-  const combinedData = loadSeries.slice(0, 72).map((item: any, i: number) => {
-    const s = solarSeries[i] || {};
-    const w = weatherForecast[i] || {};
-    return {
-      hour: `T+${i}h`,
-      predicted_demand: item.predicted_demand_kw,
-      actual_demand: item.simulated_actual_kw,
-      critical_demand: item.critical_load_kw,
-      lower_demand: item.lower_bound_kw,
-      upper_demand: item.upper_bound_kw,
-      predicted_solar: s.predicted_kw || 0,
-      actual_solar: s.simulated_actual_kw || 0,
-      temperature: w.temperature_c || item.temperature_c || -18,
-      wind_speed: w.wind_speed_kmh || 30
-    };
-  });
+  // ── Hover handler: wire Recharts onMouseMove to Zustand ────────────────
+  const handleMouseMove = useCallback((state: any) => {
+    if (state && state.activeTooltipIndex !== undefined) {
+      setHoveredHour(state.activeTooltipIndex);
+    }
+  }, [setHoveredHour]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredHour(null);
+  }, [setHoveredHour]);
+
+  // ── Click handler: wire Recharts onClick to toggle Inspector ───────────
+  const handleClick = useCallback((state: any) => {
+    if (state && state.activeTooltipIndex !== undefined) {
+      setSelectedHour(state.activeTooltipIndex);
+    }
+  }, [setSelectedHour]);
+
+  if (!loadAnalysis) {
+    return (
+      <div className="glass-panel rounded-2xl p-5 border border-polaris-800 flex items-center justify-center h-96">
+        <div className="text-cyan-400 font-mono animate-pulse">
+          TRAINING XGBOOST SURROGATE MODELS ON 15K KATABATIC EDGE-CASES...
+        </div>
+      </div>
+    );
+  }
+
+  const data = loadAnalysis.series;
+  const kpis = loadAnalysis.kpis;
+  const genCap = loadAnalysis.generator_capacity_kw;
+
+  // ── Compute per-hour KPI values for hover, or aggregate for idle ──────
+  const activeFrame = hoveredHour !== null && hoveredHour < data.length
+    ? data[hoveredHour]
+    : null;
+
+  // Wind-chill penalty: per-hour infiltration component, or worst-case aggregate
+  const displayWindPenalty = activeFrame
+    ? +(0.012 * activeFrame.wind_kmh * Math.max(0, 20 - activeFrame.temperature_c)).toFixed(1)
+    : kpis.wind_chill_penalty_kw;
+
+  // Forecast error reduction: aggregate only (per-hour doesn't make sense)
+  const displayErrorReduction = kpis.forecast_error_reduction_pct;
+
+  // Thermal inertia lag: constant physical property
+  const displayThermalLag = kpis.thermal_inertia_lag_hours;
+
+  const tooltipStyle = {
+    contentStyle: { backgroundColor: COLORS.tooltipBg, borderColor: COLORS.tooltipBorder, borderRadius: '8px' },
+    labelStyle: { color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace' },
+  };
 
   return (
-    <div className="glass-panel rounded-2xl p-5 border border-polaris-800 flex flex-col gap-4">
-      {/* Tab Switcher for Forecast Modes */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-sm font-bold font-mono tracking-wider text-white uppercase">
-            72-HOUR MULTI-HORIZON AI FORECAST LAB
-          </h2>
+    <>
+      <MathInspectorPanel />
+      <div className="glass-panel rounded-2xl p-5 border border-polaris-800 flex flex-col gap-6 relative">
+        {/* ═══════════════════════════════════════════════════════════════════
+            HEADER
+        ═══════════════════════════════════════════════════════════════════ */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <BarChart4 className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-sm font-bold font-mono tracking-wider text-white uppercase">
+              AI LOAD FORECASTING ENGINE — XGBOOST + THERMAL CONVECTION PHYSICS
+            </h2>
+          </div>
+          <div className="text-[10px] font-mono text-slate-400 tracking-widest uppercase animate-pulse">
+            CLICK ANY POINT TO INSPECT MATH
+          </div>
         </div>
 
-        <div className="flex items-center bg-polaris-900 rounded-xl p-1 border border-polaris-700">
-          <button
-            onClick={() => setActiveChart('demand')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
-              activeChart === 'demand'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            DEMAND LOAD
-          </button>
-          <button
-            onClick={() => setActiveChart('solar')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
-              activeChart === 'solar'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            SOLAR GENERATION
-          </button>
-          <button
-            onClick={() => setActiveChart('weather')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
-              activeChart === 'weather'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            WEATHER VARIABLES
-          </button>
+        {/* ═══════════════════════════════════════════════════════════════════
+            ZONE 1: THE COMPARATIVE DEMAND & UNCERTAINTY MATRIX
+            Dominates upper half. Grey baseline, cyan P50, cyan envelope, red 250kW limit.
+        ═══════════════════════════════════════════════════════════════════ */}
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-mono font-bold tracking-widest text-slate-400">
+            ZONE 1 — COMPARATIVE DEMAND & UNCERTAINTY MATRIX
+          </h3>
+          <div className="h-80 w-full bg-polaris-950/70 rounded-xl p-3 border border-polaris-800/80 cursor-crosshair">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={data}
+                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
+                onClick={handleClick}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.gridLines} />
+                <XAxis dataKey="hour" stroke={COLORS.axisText} tick={{ fontSize: 10, fill: COLORS.axisText }} />
+                <YAxis stroke={COLORS.axisText} tick={{ fontSize: 10, fill: COLORS.axisText }} unit=" kW" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace' }} />
+
+                {/* Generator physical capacity limit — solid red line */}
+                <ReferenceLine
+                  y={genCap}
+                  stroke={COLORS.genLimit}
+                  strokeWidth={2}
+                  strokeDasharray=""
+                  label={{
+                    value: `GEN LIMIT ${genCap} kW`,
+                    position: 'right',
+                    fill: COLORS.genLimit,
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                  }}
+                />
+
+                {/* P90 upper confidence bound (glowing cyan envelope top) */}
+                <Area
+                  type="monotone"
+                  dataKey="ai_p90_kw"
+                  name="P90 Upper Bound"
+                  stroke="none"
+                  fill={COLORS.envelope}
+                  fillOpacity={0.12}
+                />
+                {/* P10 lower bound — masks out below to create band illusion */}
+                <Area
+                  type="monotone"
+                  dataKey="ai_p10_kw"
+                  name="P10 Lower Bound"
+                  stroke="none"
+                  fill="#0a0f1a"
+                  fillOpacity={0.9}
+                />
+
+                {/* AI P50 — solid cyan prediction line */}
+                <Line
+                  type="monotone"
+                  dataKey="ai_p50_kw"
+                  name="POLARIS AI (P₅₀ Expected)"
+                  stroke={COLORS.aiP50}
+                  strokeWidth={2.5}
+                  dot={false}
+                />
+
+                {/* Legacy SCADA baseline — dashed grey */}
+                <Line
+                  type="monotone"
+                  dataKey="baseline_kw"
+                  name="Legacy SCADA (6h Rolling Avg)"
+                  stroke={COLORS.baseline}
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            ZONE 2: STACKED SUBSYSTEM LOAD DECOMPOSITION
+            Sedimentary area layers: red heating → orange jacket → blue science
+        ═══════════════════════════════════════════════════════════════════ */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-xs font-mono font-bold tracking-widest text-slate-400">
+              ZONE 2 — SUBSYSTEM LOAD DECOMPOSITION (THERMAL PHYSICS)
+            </h3>
+          </div>
+          <div className="h-56 w-full bg-polaris-950/70 rounded-xl p-3 border border-polaris-800/80 cursor-crosshair">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart 
+                data={data} 
+                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
+                onClick={handleClick}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.gridLines} />
+                <XAxis dataKey="hour" stroke={COLORS.axisText} tick={{ fontSize: 10, fill: COLORS.axisText }} />
+                <YAxis stroke={COLORS.axisText} tick={{ fontSize: 10, fill: COLORS.axisText }} unit=" kW" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace' }} />
+
+                {/* Bottom sediment: Life Support (emerald) — constant base */}
+                <Area
+                  type="monotone"
+                  dataKey="life_support_kw"
+                  name="P0 Life Support"
+                  stackId="load"
+                  stroke={COLORS.lifeSupportP0}
+                  fill={COLORS.lifeSupportP0}
+                  fillOpacity={0.7}
+                />
+                {/* P0 Habitat Heating (red) — balloons as temperature drops */}
+                <Area
+                  type="monotone"
+                  dataKey="habitat_heating_kw"
+                  name="P0 Habitat Heating (Q = U·A·ΔT)"
+                  stackId="load"
+                  stroke={COLORS.heatP0}
+                  fill={COLORS.heatP0}
+                  fillOpacity={0.65}
+                />
+                {/* P1 Battery Thermal Jacket (orange) — parasitic below -20°C */}
+                <Area
+                  type="monotone"
+                  dataKey="battery_jacket_kw"
+                  name="P1 Battery Jacket (T < -20°C)"
+                  stackId="load"
+                  stroke={COLORS.jacketP1}
+                  fill={COLORS.jacketP1}
+                  fillOpacity={0.6}
+                />
+                {/* P2 Deferrable Science (blue) — top layer, first to shed */}
+                <Area
+                  type="monotone"
+                  dataKey="science_labs_kw"
+                  name="P2 Science & Compute (Deferrable)"
+                  stackId="load"
+                  stroke={COLORS.scienceP2}
+                  fill={COLORS.scienceP2}
+                  fillOpacity={0.5}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            ZONE 3: FEATURE ATTRIBUTION KPI STRIP
+            Hover-linked telemetry cards. Updates from hoveredHour via Zustand.
+        ═══════════════════════════════════════════════════════════════════ */}
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-mono font-bold tracking-widest text-slate-400">
+            ZONE 3 — FEATURE ATTRIBUTION & EXPLAINABILITY
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Wind-Chill Penalty */}
+            <div className="bg-polaris-900/90 rounded-xl p-4 border border-polaris-800 flex items-center gap-3 transition-all">
+              <Wind className="w-9 h-9 text-blue-400 p-2 bg-blue-400/10 rounded-lg flex-shrink-0" />
+              <div>
+                <div className="text-[10px] font-mono text-slate-400 tracking-wider">WIND-CHILL PENALTY</div>
+                <div className="text-xl font-bold font-mono text-white">
+                  +{displayWindPenalty} kW
+                </div>
+                <div className="text-[9px] font-mono text-slate-500">
+                  {activeFrame ? `T+${hoveredHour}h · ${activeFrame.wind_kmh} km/h · ${activeFrame.temperature_c}°C` : 'Aggregate worst-case'}
+                </div>
+              </div>
+            </div>
+
+            {/* Forecast Error Reduction */}
+            <div className="bg-polaris-900/90 rounded-xl p-4 border border-polaris-800 flex items-center gap-3 transition-all">
+              <TrendingDown className="w-9 h-9 text-emerald-400 p-2 bg-emerald-400/10 rounded-lg flex-shrink-0" />
+              <div>
+                <div className="text-[10px] font-mono text-slate-400 tracking-wider">FORECAST ERROR REDUCTION</div>
+                <div className="text-xl font-bold font-mono text-white">
+                  {displayErrorReduction}%
+                </div>
+                <div className="text-[9px] font-mono text-slate-500">
+                  AI MAE vs. Legacy SCADA MAE
+                </div>
+              </div>
+            </div>
+
+            {/* Thermal Inertia Lag */}
+            <div className="bg-polaris-900/90 rounded-xl p-4 border border-polaris-800 flex items-center gap-3 transition-all">
+              <Clock className="w-9 h-9 text-rose-400 p-2 bg-rose-400/10 rounded-lg flex-shrink-0" />
+              <div>
+                <div className="text-[10px] font-mono text-slate-400 tracking-wider">THERMAL INERTIA LAG</div>
+                <div className="text-xl font-bold font-mono text-white">
+                  {displayThermalLag}h
+                </div>
+                <div className="text-[9px] font-mono text-slate-500">
+                  τ = (M·Cₚ) / (U·A) — Cold penetration delay
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Main Chart Canvas */}
-      <div className="h-72 w-full bg-polaris-950/70 rounded-xl p-3 border border-polaris-800/80">
-        <ResponsiveContainer width="100%" height="100%">
-          {activeChart === 'demand' ? (
-            <AreaChart data={combinedData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="hour" stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} />
-              <YAxis stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} unit=" kW" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
-                labelStyle={{ color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace' }}
-              />
-              <Legend wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace' }} />
-              <Area
-                type="monotone"
-                dataKey="upper_demand"
-                name="Confidence Upper Band"
-                stroke="#0284c7"
-                fill="#0284c7"
-                fillOpacity={0.1}
-              />
-              <Area
-                type="monotone"
-                dataKey="critical_demand"
-                name="Critical Non-Negotiable Load"
-                stroke="#f43f5e"
-                fill="#f43f5e"
-                fillOpacity={0.15}
-              />
-              <Line
-                type="monotone"
-                dataKey="predicted_demand"
-                name="AI Predicted Demand (kW)"
-                stroke="#38bdf8"
-                strokeWidth={2.5}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="actual_demand"
-                name="Simulated Actual Telemetry (kW)"
-                stroke="#a855f7"
-                strokeDasharray="3 3"
-                strokeWidth={1.8}
-                dot={false}
-              />
-            </AreaChart>
-          ) : activeChart === 'solar' ? (
-            <AreaChart data={combinedData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="hour" stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} />
-              <YAxis stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} unit=" kW" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
-                labelStyle={{ color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace' }}
-              />
-              <Legend wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace' }} />
-              <Area
-                type="monotone"
-                dataKey="predicted_solar"
-                name="AI Predicted Solar PV (kW)"
-                stroke="#f59e0b"
-                fill="#f59e0b"
-                fillOpacity={0.25}
-                strokeWidth={2.5}
-              />
-              <Line
-                type="monotone"
-                dataKey="actual_solar"
-                name="Simulated Actual Solar (kW)"
-                stroke="#10b981"
-                strokeDasharray="4 4"
-                strokeWidth={2}
-                dot={false}
-              />
-            </AreaChart>
-          ) : (
-            <LineChart data={combinedData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="hour" stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} />
-              <YAxis yAxisId="left" stroke="#38bdf8" tick={{ fontSize: 10, fill: '#38bdf8' }} unit="°C" />
-              <YAxis yAxisId="right" orientation="right" stroke="#f59e0b" tick={{ fontSize: 10, fill: '#f59e0b' }} unit=" km/h" />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
-                labelStyle={{ color: '#94a3b8', fontSize: '11px', fontFamily: 'monospace' }}
-              />
-              <Legend wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace' }} />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="temperature"
-                name="Ambient Temperature (°C)"
-                stroke="#38bdf8"
-                strokeWidth={2.5}
-                dot={false}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="wind_speed"
-                name="Wind Speed (km/h)"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                dot={false}
-              />
-            </LineChart>
-          )}
-        </ResponsiveContainer>
-      </div>
-
-      {/* Model Horizon KPI Pills */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-polaris-900/90 rounded-xl p-3 border border-polaris-800">
-          <div className="text-[10px] font-mono text-slate-400">1-HOUR FORECAST</div>
-          <div className="text-sm font-bold font-mono text-white mt-1">
-            Dem: {loadForecast?.horizon_predictions?.['1h_demand_kw'] || 120} kW
-          </div>
-          <div className="text-[10px] font-mono text-amber-400">
-            Sol: {solarForecast?.horizon_predictions?.['1h_solar_kw'] || 45} kW
-          </div>
-        </div>
-
-        <div className="bg-polaris-900/90 rounded-xl p-3 border border-polaris-800">
-          <div className="text-[10px] font-mono text-slate-400">6-HOUR FORECAST</div>
-          <div className="text-sm font-bold font-mono text-white mt-1">
-            Dem: {loadForecast?.horizon_predictions?.['6h_demand_kw'] || 135} kW
-          </div>
-          <div className="text-[10px] font-mono text-amber-400">
-            Sol: {solarForecast?.horizon_predictions?.['6h_solar_kw'] || 80} kW
-          </div>
-        </div>
-
-        <div className="bg-polaris-900/90 rounded-xl p-3 border border-polaris-800">
-          <div className="text-[10px] font-mono text-slate-400">24-HOUR FORECAST</div>
-          <div className="text-sm font-bold font-mono text-white mt-1">
-            Dem: {loadForecast?.horizon_predictions?.['24h_demand_kw'] || 125} kW
-          </div>
-          <div className="text-[10px] font-mono text-amber-400">
-            Sol: {solarForecast?.horizon_predictions?.['24h_solar_kw'] || 30} kW
-          </div>
-        </div>
-
-        <div className="bg-polaris-900/90 rounded-xl p-3 border border-polaris-800">
-          <div className="text-[10px] font-mono text-slate-400">72-HOUR TOTALS</div>
-          <div className="text-sm font-bold font-mono text-white mt-1">
-            {loadForecast?.horizon_predictions?.['total_72h_demand_kwh'] || 8600} kWh
-          </div>
-          <div className="text-[10px] font-mono text-cyan-400">
-            MAPE Error: {loadForecast?.metrics?.mape_pct || 3.8}%
-          </div>
-        </div>
-      </div>
-    </div>
+    </>
   );
 };
